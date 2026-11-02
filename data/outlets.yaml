@@ -1,0 +1,24 @@
+# PRD 7.4 송출 가능 매체 참조 데이터 (2026-04-02 문서 기준)
+naver_cp_allowed:
+  - "매일경제(신문, AX)"
+  - "MBN"
+  - "매경 ECONOMY"
+  - "MK 스포츠"
+
+naver_cp_disallowed:
+  - "매일경제TV"
+  - "매경헬스(뉴스스탠드 제휴)"
+  - "매경 LUXMEN"
+  - "매경 GOLF"
+  - "MK 빌리어드"
+  - "시티라이프"
+
+exceptions:
+  - "매일경제신문 인쇄 지면 게재 기사/칼럼 형태"
+
+unregistered_periodicals:
+  - "스타투데이"
+  - "게임진"
+  - "엠블럭컴퍼니"
+  - "여행플러스"
+  - "매경비즈"

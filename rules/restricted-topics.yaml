@@ -1,0 +1,170 @@
+# PRD 7.1 제한 소재 (두 문서 통합 - 데이터 정의 전용, 판정 로직은 M3에서 구현)
+document_sources:
+  - "기사식광고 제한 소재"
+  - "PR사업팀 온라인 기사 업무 프로세스(261022)"
+
+# 1. 기사식광고 제한 소재 문서 기준
+ad_article_restricted_materials:
+  - id: RST-DOC1-01
+    category: "업종"
+    items:
+      - "병원"
+      - "보험"
+      - "성형"
+      - "다이어트"
+      - "담배·전자담배"
+      - "의약품"
+      - "건강식품"
+    default_action: REJECT
+    emphasized: false
+
+  - id: RST-DOC1-02
+    category: "금융/사기"
+    items:
+      - "가상화폐(코인·NFT)"
+      - "다단계"
+      - "투자"
+      - "사기업체 (예: 머지포인트, 베노디글로벌)"
+    default_action: REJECT
+    emphasized: true
+
+  - id: RST-DOC1-03
+    category: "타 언론사 프로그램·주관 대상 행사 관련"
+    items:
+      - "타 언론사 프로그램·주관 대상 행사 관련"
+    default_action: REJECT
+    emphasized: false
+
+  - id: RST-DOC1-04
+    category: "기부단체·기부 관련"
+    items:
+      - "기부단체·기부 관련"
+    default_action: HOLD
+    emphasized: false
+
+  - id: RST-DOC1-05
+    category: "주가 영향·MOU"
+    items:
+      - "주가에 영향을 미치는 내용(장외주식, IPO 공개, 종목코드 등)"
+      - "MOU 관련"
+    default_action: REJECT
+    emphasized: false
+
+  - id: RST-DOC1-06
+    category: "편향·비교"
+    items:
+      - "한쪽만 대변하는 내용"
+      - "비교 기사"
+    default_action: HOLD
+    emphasized: false
+
+  - id: RST-DOC1-07
+    category: "제한 기사 형식"
+    items:
+      - "인터뷰 기사"
+      - "칼럼 기사"
+      - "동영상 포함 기사"
+    default_action: REJECT
+    emphasized: false
+
+  - id: RST-DOC1-08
+    category: "최근 이슈화된 소재"
+    items:
+      - "코로나19"
+      - "우크라이나 전쟁"
+      - "주택조합아파트 등"
+    default_action: HOLD
+    emphasized: false
+
+  - id: RST-DOC1-09
+    category: "확정되지 않은 내용"
+    items:
+      - "특허"
+      - "공식화되지 않은 검사 결과"
+      - "부동산 관련 정책 등"
+    default_action: HOLD
+    emphasized: false
+
+  - id: RST-DOC1-10
+    category: "국민 생활과 밀접한 소비재의 업체 주관적 홍보 기사"
+    items:
+      - "국민 생활과 밀접한 소비재의 업체 주관적 홍보 기사"
+    default_action: HOLD
+    emphasized: true
+
+# 2. 업무 프로세스 문서 [제한소재] 기준 표
+workflow_restricted_topics:
+  - id: RST-PROC-01
+    category: "투자/주식"
+    detail: "비상장주 투자 유도, 기업공개(IPO) 상장 추진, 기업가치 부풀리기"
+    default_action: "REJECT"
+
+  - id: RST-PROC-02
+    category: "공시 위반"
+    detail: "상장사의 미공시 실적/매출 자의적 노출"
+    default_action: "REJECT"
+
+  - id: RST-PROC-03
+    category: "부동산"
+    detail: "실체 없는 분양, 시공사 미정, 민간임대 논란, 분양 유도 문구"
+    default_action: "REJECT/HOLD"
+
+  - id: RST-PROC-04
+    category: "다단계"
+    detail: "네트워크 마케팅, 회원 모집"
+    default_action: "REJECT"
+
+  - id: RST-PROC-05
+    category: "회원권"
+    detail: "레지던스 분양, 클럽 회원권 판매, 사적 모임 회원 유치"
+    default_action: "REJECT"
+
+  - id: RST-PROC-06
+    category: "의료 관광"
+    detail: "병원 연계 의료관광, 숙박-의료 결합 상품"
+    default_action: "REJECT"
+
+  - id: RST-PROC-07
+    category: "미검증 바이오"
+    detail: "신약 개발, 줄기세포, 검증 안 된 치료 효과"
+    default_action: "REJECT"
+
+  - id: RST-PROC-08
+    category: "법적 분쟁"
+    detail: "명예훼손, 악플 고소 결과, 민원/고발 무혐의 처리 소식"
+    default_action: "REJECT/HOLD"
+
+  - id: RST-PROC-09
+    category: "홈페이지"
+    detail: "접속 불가, 보안 문제, 유령 회사"
+    default_action: "REJECT"
+
+  - id: RST-PROC-10
+    category: "출처 불분명"
+    detail: "출처 없는 공공데이터 인용, 해외 미확인 기관 언급"
+    default_action: "HOLD"
+
+  - id: RST-PROC-11
+    category: "미확정 미래"
+    detail: "수주 예정, 기술 적용 검토 단계"
+    default_action: "표현 삭제(PASS_WITH_EDIT) 또는 HOLD"
+
+  - id: RST-PROC-12
+    category: "근거 없는 수치"
+    detail: "자사 주장 수치(예: 대손 75% 감소), 응답률 낮은 설문 과장"
+    default_action: "HOLD(증빙 요청)"
+
+  - id: RST-PROC-13
+    category: "단순 특허"
+    detail: "특허 하나로 기술력 과대 포장"
+    default_action: "표현 완화 + 증빙 요청"
+
+  - id: RST-PROC-14
+    category: "중복/혼재"
+    detail: "타 매체 동일 기사, 세미나 소식과 회사 홍보 혼재"
+    default_action: "HOLD"
+
+  - id: RST-PROC-15
+    category: "상업 광고"
+    detail: "홈쇼핑 방송 안내 등 순수 광고 이미지 포함"
+    default_action: "이미지 제외 요청"

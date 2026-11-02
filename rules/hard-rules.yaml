@@ -1,0 +1,110 @@
+# PRD 7.2 하드룰 (detector: code 기준, 설정값 포함)
+rules:
+  - id: FMT-01
+    source: "기사식광고 제한 소재 / 업무 프로세스"
+    severity: BLOCK
+    detector: code
+    action: "자동 삭제/마스킹 제안"
+    message: "전화번호·홈페이지 주소·종목코드·QR코드 노출 불가"
+    params: {}
+
+  - id: FMT-02
+    source: "기사식광고 체크사항 / 업무 프로세스"
+    severity: WARN
+    detector: code
+    action: "자동 치환 제안"
+    message: "면적은 평 대신 ㎡로 표기해야 합니다 (예: 100평 → 330㎡ 또는 330㎡(100평))."
+    params:
+      pyeongToSqmFactor: 3.3058
+
+  - id: FMT-03
+    source: "기사식광고 체크사항 / 업무 프로세스"
+    severity: WARN
+    detector: code
+    action: "자동 치환 제안"
+    message: "상세 주소(번지·로·길 건물번호) 표기를 제한합니다 ('OO동 일대' 등으로 완화 권장)."
+    params: {}
+
+  - id: FMT-04
+    source: "업무 프로세스 3단계 / PRD 7.2"
+    severity: WARN
+    detector: code
+    action: "범위 밖 경고"
+    message: "제목은 40자 내외(28~45자)여야 합니다."
+    params:
+      minChars: 28
+      maxChars: 45
+      targetChars: 40
+
+  - id: FMT-05
+    source: "업무 프로세스 / PRD 7.2 (오픈 이슈 #14)"
+    severity: WARN
+    detector: code
+    action: "범위 밖 경고, 재작성 권장"
+    message: "본문 분량이 목표 범위(공백 포함 1,200~1,500자)를 벗어났습니다."
+    params:
+      minChars: 1200
+      maxChars: 1500
+      observedSampleMinChars: 650
+
+  - id: FMT-06
+    source: "기사식광고 체크사항 / PRD 7.2"
+    severity: WARN
+    detector: code
+    action: "규격 경고"
+    message: "첨부 사진은 최대 2장, 가로/세로 600~700px 이내여야 합니다."
+    params:
+      maxPhotos: 2
+      minDimensionPx: 600
+      maxDimensionPx: 700
+
+  - id: FMT-07
+    source: "업무 프로세스 3단계 / PRD 7.2"
+    severity: WARN
+    detector: code
+    action: "홍보체 자동 수정 제안 및 밝혔다 반복 경고"
+    message: "홍보체 표현을 금지하며, '~밝혔다' 반복(기본 3회 이상)을 억제해야 합니다."
+    params:
+      maxBalkhyeotdaCount: 3
+
+  - id: FMT-08
+    source: "업무 프로세스 2단계 3) / PRD 7.2 (오픈 이슈 #16)"
+    severity: WARN
+    detector: code
+    action: "공인 출처 근거 없으면 삭제/완화, 근거 있으면 출처 병기 후 WARN"
+    message: "최상급·단정 표현이 포함되어 있습니다. 공인 출처 근거가 없으면 삭제하거나 완화하십시오."
+    params:
+      policy: "warn_and_require_evidence"
+
+  - id: FMT-10
+    source: "기사식광고 체크사항 / PRD 7.2"
+    severity: WARN
+    detector: code
+    action: "캡션 누락 경고"
+    message: "사진 캡션 필수 요소(설명 및 제공자)가 누락되었습니다."
+    params: {}
+
+  - id: FMT-11
+    source: "네이버 운영평가 C항목 / PRD 7.2"
+    severity: BLOCK
+    detector: code
+    action: "미입력 차단"
+    message: "기사에 작성자 식별 정보(바이라인)가 설정되어야 합니다."
+    params: {}
+
+  - id: FMT-12
+    source: "실제 게재 샘플 분석 / PRD 7.2 (오픈 이슈 #15)"
+    severity: WARN
+    detector: code
+    action: "자동 정규화 제안"
+    message: "사진 캡션은 '설명 + 제공자' 구조여야 하며, 제공자 표기 형식을 통일해야 합니다."
+    params:
+      canonicalProviderFormat: "[제공=기관]"
+      allowedProviderPatterns:
+        - "<제공="
+        - "<출처="
+        - "<사진="
+        - "[제공="
+        - "[출처:"
+        - "[출처="
+        - "[사진="

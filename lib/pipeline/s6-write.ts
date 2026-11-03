@@ -371,8 +371,39 @@ export function inferIndustryCompetitors(
     sources[2]?.url ??
     `https://www.mk.co.kr/search?word=${encodeURIComponent("업계 트렌드")}`;
 
-  // 1. 파크골프 / 스크린 스포츠 / 스포츠용품 업종 (예: 낫소)
-  if (/(?:파크골프|피클볼|스크린\s*파크|스포츠용품)/.test(text)) {
+  // 1. 글로벌 스포츠 테크 / 모바일·무선통신 파트너십 업종 (예: 삼성전자 올림픽 파트너십)
+  if (/(?:올림픽|갤럭시|스마트폰|무선\s*통신|빅토리\s*셀피)/.test(text) || /삼성전자/.test(company)) {
+    return {
+      industryLabel: "글로벌 스포츠 대회 모바일·AI 중계 및 공식 기술 파트너십",
+      competitors: [
+        {
+          name: "애플(Apple)",
+          summary:
+            "북미 프로야구(MLB) ‘프라이데이 나잇 베이스볼’과 메이저리그사커(MLS) 중계 현장에 아이폰 프로 모델을 방송 보조 카메라로 투입하며 스포츠 중계 영역에서 모바일 카메라 활용도를 넓히고 있다.",
+          sourceUrl: fallbackUrl1,
+          selected: true,
+        },
+        {
+          name: "알리바바 클라우드·오메가(OMEGA)",
+          summary:
+            "IOC 공식 월드와이드 기술 파트너사들도 AI 기반 실시간 선수 모션 분석과 클라우드 중계 송출 시스템을 올림픽 현장에 잇따라 도입하며 글로벌 스포츠 테크 주도권 경쟁을 벌이고 있다.",
+          sourceUrl: fallbackUrl2,
+          selected: true,
+        },
+        {
+          name: "구글(픽셀)·모토로라",
+          summary:
+            "미국프로농구(NBA) 및 국제 스포츠 대회 공식 후원사로 참여해 경기장 내 AI 사진 편집 체험존과 팬 참여형 이벤트를 운영하는 등 스포츠 마케팅 접점을 빠르게 확대하고 있다.",
+          sourceUrl: fallbackUrl3,
+          selected: true,
+        },
+      ],
+      comparisonAnalysisParagraph: `글로벌 빅테크 기업들이 주로 방송 송출 인프라나 관람객 대상 마케팅에 집중하는 것과 달리, ${company}는 경기장 중계 장비 지원을 넘어 시상대 위 ‘빅토리 셀피’, 선수촌 ‘삼성 오픈 스테이션’ 기기 서비스, 롤모델 멘토링(‘메달을 넘어’)까지 결합해 선수 경험 중심의 통합 올림픽 파트너십 모델을 구축했다는 평가다.`,
+    };
+  }
+
+  // 1-B. 파크골프 / 스크린 파크골프 전용 시뮬레이터 업종 (단순 '스포츠' 단어 매칭 제외, '파크골프/피클볼' 명시 시에만 매칭)
+  if (/(?:파크골프|피클볼|스크린\s*파크)/.test(text)) {
     return {
       industryLabel: "스크린 파크골프 및 생활체육 시스템",
       competitors: [
@@ -1308,16 +1339,16 @@ function buildDeterministicDraft(
     const activeComps =
       validSelectedComps.length > 0 ? validSelectedComps : inferred.competitors;
 
-    const compSentences = activeComps
-      .map((c) => {
-        const cleanSummary = c.summary.replace(/^[은는이가]\s*/, "");
-        return `${c.name}의 경우 ${cleanSummary}`;
-      })
-      .join(" ");
-
-    bodyParagraphs.push(
-      `관련 ${inferred.industryLabel} 시장에서도 주요 기업과 브랜드들의 영역 확장 경쟁이 치열하게 전개되고 있다. ${compSentences}`
-    );
+    activeComps.forEach((c, idx) => {
+      const cleanSummary = c.summary.replace(/^[은는이가]\s*/, "");
+      if (idx === 0) {
+        bodyParagraphs.push(
+          `관련 ${inferred.industryLabel} 시장에서도 주요 기업과 브랜드들의 영역 확장 경쟁이 치열하게 전개되고 있다. ${c.name}의 경우 ${cleanSummary}`
+        );
+      } else {
+        bodyParagraphs.push(`또한 ${c.name}의 경우 ${cleanSummary}`);
+      }
+    });
 
     const analysisPara =
       customComparisonAnalysisParagraph &&

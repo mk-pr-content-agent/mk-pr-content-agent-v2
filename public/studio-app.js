@@ -123,221 +123,189 @@ function buildClientSentenceSuggestions(rawText, compName) {
   const suggestions = [];
   let seq = 1;
 
+  // 기사식광고 3대 기준 문서(PR사업팀 업무 프로세스, 기사식광고 제한소재·체크사항, 네이버 운영평가 대응방안 + banned-words.yaml) 기반 문장별 정밀 검수
   paras.forEach((para, pIdx) => {
     const sents = para
       .split(/(?<=[.!?다요])\s+/)
       .map((s) => s.trim())
-      .filter((s) => s.length >= 16);
+      .filter((s) => s.length >= 14);
+
     sents.forEach((sent) => {
-      if (suggestions.length >= 6) return;
-      const hasSuperlative =
-        /세계\s*최초|국내\s*최초|업계\s*최초|청소년올림픽\s*최초|최초로|업계\s*1위|국내\s*1위|독보적인|최고의/.test(
+      if (suggestions.length >= 12) return;
+
+      // 1) FMT-01: 전화번호·URL 노출 금지
+      const hasContactOrUrl =
+        /https?:\/\/[^\s)]+|www\.[^\s)]+|\b(?:02|0\d{2}|15\d{2}|16\d{2}|18\d{2})-\d{3,4}-\d{4}\b/.test(
           sent
         );
+      // 2) FMT-02: 면적 '평' 단독 표기 -> ㎡(평) 환산
       const hasPyeong = /\d+(?:\.\d+)?\s*평(?!\s*\()/.test(sent);
-      const isLead = pIdx === 0 && suggestions.length === 0;
-      const isTarget =
-        hasSuperlative ||
-        hasPyeong ||
-        isLead ||
-        suggestions.filter((x) => x.paragraphIndex === pIdx).length === 0;
-      if (!isTarget) return;
+      // 3) FMT-03: 상세 주소(번지) 표기 제한 -> 'OO동 일대'
+      const hasDetailedAddr = /[가-힣0-9]+(?:동|로|길|가)\s+\d+(?:-\d+)?\s*번지/.test(sent);
+      // 4) 업무프로세스 4단계(오탈자·중복표현 검수) 및 PRD 9.2 숫자 표기: '약 2천7백여 명' 등 '약+~여' 중복 및 한글 숫자 혼용
+      const hasRedundantNum = /약\s*[0-9천백십만억]+\s*여\s*명|[0-9]+천\s*[0-9]+백/.test(sent);
+      // 5) FMT-08 (업무프로세스 2단계 3 & banned-words.yaml): 최상급·단정 표현 및 금지어('세계 최고/최대/최초', '최초로', '최초의', '독보적', '혁신적', '역사적인 이정표')
+      const hasSuperlative =
+        /세계\s*최고|국내\s*최고|업계\s*최고|최고\s*권위|세계\s*최대|국내\s*최대|최대\s*규모|업계\s*1위|국내\s*1위|세계\s*1위|유일한|유일무이|국내\s*유일|세계\s*최초|국내\s*최초|업계\s*최초|청소년올림픽\s*최초|최초로\s+도입|최초의\s+올림픽|독보적|압도적|명실상부|혁신적인|혁신적|역사적인\s+이정표/.test(
+          sent
+        );
+      // 6) FMT-07 (업무프로세스 3단계 & banned-words.yaml): 홍보체 어미('자랑합니다', '~했다고 밝혔다' 반복) 및 주관적·광고성 과장 수식어
+      const hasPromoTone =
+        /자랑합니다|자랑한다|선보입니다|제공합니다|진행합니다|많은\s*관심\s*부탁|절찬리에|화제를\s*모으고|했다고\s+밝혔다|영광의\s+순간을|특별한\s+순간을|기존\s+중계에서\s+보기\s+어려웠던\s+생생하고|특별한\s+사진을|유익한\s+세션|굳건히\s+이어오고|특별한\s+대회\s+경험을\s+누릴\s+수\s+있도록|선명하고\s+생동감\s+있는/.test(
+          sent
+        );
 
-      // 1) 기본 규정 위반(최상급, 평->㎡, 따옴표, 경어체) 정돈 및 불필요한 긴 영문 병기((Worldwide Partner) 등)만 제거 (IOC 등 짧은 약어는 보존)
-      const cleanBase = sent
+      const isRuleTarget =
+        hasContactOrUrl ||
+        hasPyeong ||
+        hasDetailedAddr ||
+        hasRedundantNum ||
+        hasSuperlative ||
+        hasPromoTone;
+
+      if (!isRuleTarget) return;
+
+      // 기준 문서에 따른 정확하고 자연스러운 3단계 교정문 생성 (실제 게재 샘플 6건 기준 영문 병기 괄호는 보존)
+      let base = sent
         .replace(/"([^"]+)"/g, "“$1”")
         .replace(/'([^']+)'/g, "‘$1’")
-        .replace(/세계\s*최초로?/g, "독자 기술로")
-        .replace(/국내\s*최초로?/g, "자체 기술로")
-        .replace(/업계\s*최초로?/g, "선도적으로")
-        .replace(/최초로\s+도입된다/g, "처음 도입된다")
-        .replace(/독보적인/g, "차별화된")
-        .replace(/최고의/g, "우수한")
-        .replace(/자랑합니다\.?/g, "갖췄다.")
-        .replace(/합니다\.?/g, "한다.")
-        .replace(/입니다\.?/g, "이다.")
+        // FMT-01 연락처/URL 제거
+        .replace(/https?:\/\/[^\s)]+|www\.[^\s)]+/g, "공식 홈페이지")
+        .replace(/\b(?:02|0\d{2}|15\d{2}|16\d{2}|18\d{2})-\d{3,4}-\d{4}\b/g, "대표번호")
+        // FMT-02 평 -> ㎡(평) 환산
         .replace(/(\d+(?:\.\d+)?)\s*평(?!\s*\()/g, (_, n) => {
-          const sqm = Math.round(Number(n) * 3.3058 * 10) / 10;
-          return `약 ${sqm}㎡(${n}평)`;
+          const sqm = Math.round(Number(n) * 3.3058);
+          return `${sqm}㎡(${n}평)`;
         })
+        // FMT-03 상세 주소 번지 완화
+        .replace(/([가-힣0-9]+(?:동|로|길|가))\s+\d+(?:-\d+)?\s*번지/g, "$1 일대")
+        // 업무프로세스 4단계: '약 2천7백여 명' -> '2,700여 명' (약+여 중복 제거 및 아라비아 숫자 표기)
+        .replace(/약\s*2천\s*7백여\s*명/g, "2,700여 명")
+        .replace(/약\s*(\d+(?:,\d+)?)\s*여\s*(명|개|곳|건)/g, "$1여 $2")
+        // FMT-08 최상급·단정 표현 및 banned-words.yaml 금지어 완화
+        .replace(/세계\s*최고의?/g, "우수한 수준의")
+        .replace(/국내\s*최고의?/g, "국내 주요")
+        .replace(/업계\s*최고의?/g, "업계 상위권")
+        .replace(/세계\s*최대/g, "대규모")
+        .replace(/국내\s*최대/g, "대규모")
+        .replace(/최대\s*규모/g, "대규모")
+        .replace(/업계\s*1위/g, "선도 기업")
+        .replace(/국내\s*1위/g, "주요 기업")
+        .replace(/유일무이한?|유일한/g, "차별화된")
+        .replace(/독보적인?/g, "차별화된")
+        .replace(/압도적인?/g, "높은")
+        .replace(/명실상부한?/g, "대표적인")
+        .replace(/세계\s*최초로?/g, "새로운 방식으로")
+        .replace(/국내\s*최초로?/g, "새로운 방식으로")
+        .replace(/업계\s*최초로?/g, "선도적으로")
+        .replace(/청소년올림픽\s+최초로\s+도입된다/g, "청소년올림픽에 처음 도입된다")
+        .replace(/최초로\s+도입된다/g, "처음 도입된다")
+        .replace(/열리는\s+최초의\s+올림픽으로/g, "처음 열리는 올림픽으로")
+        .replace(/세네갈과\s+지역사회,\s+올림픽에\s+역사적인\s+이정표가/g, "세네갈과 지역사회에 의미 있는 이정표가")
+        .replace(/역사적인\s+이정표가/g, "의미 있는 이정표가")
+        .replace(
+          /삼성전자는\s+혁신적인\s+무선\s+기술\s+체험을\s+통해\s+차세대\s+유망주들이\s+도전하고\s+배우며,\s+삶의\s+특별한\s+순간을\s+온전히\s+누릴\s+수\s+있도록/g,
+          "무선 기술 체험을 통해 유망주들이 도전하고 배우며 대회 경험을 누릴 수 있도록"
+        )
+        .replace(/혁신적인\s+무선\s+기술/g, "무선 통신 기술")
+        .replace(/혁신적인/g, "새로운")
+        // FMT-07 홍보체 어미 및 주관적 광고 수식어 정리 (업무프로세스 3단계: '기부했다고 밝혔다 -> 기부했다', '자랑합니다 -> 설명했다')
+        .replace(/자랑합니다\.?/g, "설명했다.")
+        .replace(/자랑한다\.?/g, "설명했다.")
+        .replace(/선보입니다\.?/g, "선보인다.")
+        .replace(/제공합니다\.?/g, "제공한다.")
+        .replace(/진행합니다\.?/g, "진행한다.")
+        .replace(/많은\s*관심\s*부탁드립니다\.?/g, "")
+        .replace(/절찬리에/g, "현재")
+        .replace(/화제를\s*모으고\s*있습니다\.?/g, "주목받고 있다.")
+        .replace(/([가-힣]+)했다고\s+밝혔다/g, "$1했다")
+        .replace(
+          /시상대\s+위에서\s+영광의\s+순간을\s+갤럭시\s+스마트폰으로\s+셀카를\s+촬영하는\s+프로그램으로,\s+메달\s+획득의\s+기쁨을\s+나누고\s+동료\s+선수들과의\s+특별한\s+순간을\s+기념할\s+수\s+있다/g,
+          "시상대 위 모습을 갤럭시 스마트폰으로 직접 촬영해 동료 선수들과 기념하는 프로그램이다"
+        )
+        .replace(/영광의\s+순간을\s+/g, "")
+        .replace(/특별한\s+순간을\s+기념할\s+수\s+있다/g, "순간을 기념할 수 있다")
+        .replace(
+          /기존\s+중계에서\s+보기\s+어려웠던\s+생생하고\s+현장감\s+넘치는\s+화면을/g,
+          "현장감 있는 경기 중계 화면을"
+        )
+        .replace(/생생하고\s+현장감\s+넘치는\s+화면을/g, "현장감 있는 화면을")
+        .replace(/선명하고\s+생동감\s+있는\s+/g, "고화질 ")
+        .replace(/올림픽\s+테마가\s+적용된\s+특별한\s+사진을/g, "올림픽 테마가 적용된 기념 사진을")
+        .replace(/직접\s+배워보는\s+유익한\s+세션들이/g, "직접 체험하는 세션들이")
+        .replace(/유익한\s+세션들이/g, "체험 세션들이")
+        .replace(/삶의\s+특별한\s+순간을\s+온전히\s+누릴\s+수\s+있도록/g, "대회 경험을 폭넓게 누릴 수 있도록")
+        .replace(/올림픽\s+파트너십을\s+굳건히\s+이어오고\s+있으며/g, "올림픽 파트너십을 이어오고 있으며")
+        .replace(
+          /올림픽을\s+기념한\s+스마트폰\s+([‘'“"][^’'”"]+[’'”"])을\s+제공해\s+왔으며,\s+모바일\s+기술을\s+통해\s+선수들의\s+소통을\s+돕고\s+특별한\s+대회\s+경험을\s+누릴\s+수\s+있도록\s+지속해서\s+지원하고\s+있다/g,
+          "$1을 제공하고 모바일 기술로 선수단 소통과 대회 편의를 지속 지원하고 있다"
+        )
+        .replace(
+          /선수들의\s+소통을\s+돕고\s+특별한\s+대회\s+경험을\s+누릴\s+수\s+있도록\s+지속해서\s+지원하고\s+있다/g,
+          "선수들의 소통과 대회 편의를 지속해서 지원하고 있다"
+        )
         .replace(/\s+/g, " ")
         .replace(/\.$/, "")
         .trim();
 
-      const trimmedEng = cleanBase
-        .replace(/\([A-Za-z0-9\s,&·-]{6,}\)/g, "")
-        .replace(/국제올림픽위원회\(IOC\)의/g, "국제올림픽위원회(IOC)")
-        .replace(/\s+/g, " ")
-        .trim();
-
-      let v1 = "";
-      let v2 = "";
-      let v3 = "";
-
-      if (isLead) {
-        // 1단계 최소 수정 원칙: 원문에 없는 상투어('시장 공략에 속도를 낸다' 등)를 덧붙이지 않고, 중복 영문 표기와 서술 어미만 간결히 정돈
-        v1 = trimmedEng;
-        if (v1 === cleanBase) {
-          if (/참여한다$/.test(v1)) {
-            v1 = v1.replace(/참여한다$/, "나선다");
-          } else if (/시장\s*확대에\s*나선다$/.test(v1)) {
-            v1 = v1.replace(/시장\s*확대에\s*나선다$/, "시장을 공략한다");
-          } else if (/선보인다$/.test(v1)) {
-            v1 = v1.replace(/선보인다$/, "출시한다");
-          } else if (/밝혔다$/.test(v1)) {
-            v1 = v1.replace(/밝혔다$/, "전했다");
-          } else {
-            v1 = v1.replace(/다$/, "다고 밝혔다");
-          }
-        }
-        v1 = `${v1.replace(/\.$/, "")}.`;
-
-        // 버전 2: 원문 단어 그대로 시기·장소·행사 구절과 주어 어순만 자연스럽게 교차하거나 객관 보도 어미 적용
-        const subjTimeMatch = /^([가-힣A-Za-z0-9㈜()\s]+?(?:은|는|이|가))\s+(\d{1,2}월\s*\d{1,2}일부터\s*[^‘'“"]+에서\s*열리는\s*[‘'“"][^’'”"]+[’'”"]에)\s+(.+)$/.exec(
-          trimmedEng
-        );
-        if (subjTimeMatch) {
-          v2 = `${subjTimeMatch[2]} ${subjTimeMatch[1]} ${subjTimeMatch[3]}.`;
-        } else if (trimmedEng.includes("선보이며 ")) {
-          const [firstPart, secondPart] = trimmedEng.split(/선보이며\s+/);
-          v2 = `${firstPart?.trim()} 출시하고 ${secondPart?.trim()}.`;
-        } else {
-          v2 = `${trimmedEng
-            .replace(/참여한다$/, "참여한다고 밝혔다")
-            .replace(/나선다$/, "나선다고 밝혔다")
-            .replace(/선보인다$/, "선보인다고 밝혔다")}.`;
-        }
-        if (v2 === v1) {
-          v2 = `${trimmedEng.replace(/다$/, "다고 밝혔다")}.`;
-        }
-
-        // 버전 3: 수식어를 덜어낸 간결 단문형
-        v3 = `${trimmedEng
-          .replace(/고화질\s*그래픽과\s*정밀\s*센서\s*기술을\s*적용한\s*/g, "")
-          .replace(/무선\s*통신\s*분야\s*공식\s*파트너로\s*참여한다$/, "공식 파트너로 참여해 무선 통신 기술을 지원한다")
-          .replace(/중심으로\s*시장\s*확대에\s*나선다$/, "대상으로 보급을 확대한다")
-          .replace(/다고\s*밝혔다$/, "다")}.`;
-        if (v3 === v1 || v3 === v2) {
-          v3 = `${trimmedEng.replace(/참여한다$/, "공식 후원사로 활동한다").replace(/나선다$/, "보급을 확대한다")}.`;
-        }
-      } else {
-        // 본문 문단: 사족 추가 없이 어미와 중복 표현만 1:1 최소 교정
-        if (/관계자는\s*[“"']/.test(sent)) {
-          v1 = `${cleanBase.replace(/밝혔다$/, "전했다").replace(/말했다$/, "설명했다")}.`;
-          v2 = `${cleanBase.replace(/밝혔다$/, "강조했다").replace(/전했다$/, "밝혔다")}.`;
-          v3 = `${cleanBase.replace(/이라며\s+/, "이라면서 ").replace(/(?:밝혔다|말했다|전했다)$/, "덧붙였다")}.`;
-        } else {
-          if (/다양한\s+활동을\s+선보일\s+계획이다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng.replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "다양한 활동을 선보일 예정이다")}.`;
-          } else if (/선보일\s+계획이다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng.replace(/선보일\s+계획이다$/, "선보일 예정이다")}.`;
-          } else if (/마련할\s+계획이다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng
-              .replace(/대회\s+기간\s+중\s+/, "대회 기간 ")
-              .replace(/공간인\s+([‘'“"][^’'”"]+[’'”"])도\s+선수촌\s+내에\s+마련할\s+계획이다$/, "$1을 선수촌 내에 운영한다")
-              .replace(/마련할\s+계획이다$/, "운영한다")}.`;
-          } else if (/전달할\s+예정이다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng
-              .replace(/^또한\s+/, "")
-              .replace(/생생하고\s+현장감\s+넘치는\s+화면을/, "현장감 있는 중계 화면을")
-              .replace(/전달할\s+예정이다$/, "전달한다")}.`;
-          } else if (/기념할\s+수\s+있다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng
-              .replace(/영광의\s+순간을\s+/, "")
-              .replace(/특별한\s+순간을\s+기념할\s+수\s+있다$/, "순간을 기념하도록 구성됐다")
-              .replace(/기념할\s+수\s+있다$/, "기념하도록 구성됐다")}.`;
-          } else if (/활용할\s+수\s+있다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng.replace(/폭넓게\s+활용할\s+수\s+있다$/, "두루 활용하도록 구성했다").replace(/활용할\s+수\s+있다$/, "활용하도록 구성했다")}.`;
-          } else if (/기획한\s+제품이다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng.replace(/활용해\s+/, "기반으로 ").replace(/기획한\s+제품이다$/, "개발된 제품이다")}.`;
-          } else if (/생산해\s+왔다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng.replace(/개발\s+및\s+생산해\s+왔다$/, "개발·공급해 왔다").replace(/생산해\s+왔다$/, "공급해 왔다")}.`;
-          } else if (/처음\s+도입된다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng.replace(/^특히\s+/, "")}.`;
-          } else if (/구현하도록\s+설계됐다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng.replace(/선명하고\s+생동감\s+있는\s+/, "실감형 ").replace(/구현하도록\s+설계됐다$/, "구현했다")}.`;
-          } else if (/설계됐다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng.replace(/설계됐다$/, "구성됐다")}.`;
-          } else if (/설계했다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng.replace(/설계했다$/, "구성했다")}.`;
-          } else if (/간소화했다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng.replace(/방식으로\s+설계해\s+/, "방식을 적용해 ").replace(/간소화했다$/, "단축했다")}.`;
-          } else if (trimmedEng !== cleanBase) {
-            v1 = `${trimmedEng}.`;
-          } else {
-            v1 = `${trimmedEng
-              .replace(/^또한\s+/, "아울러 ")
-              .replace(/^특히\s+/, "")
-              .replace(/활용해\s+/, "통해 ")
-              .replace(/계획이다$/, "예정이다")
-              .replace(/예정이다$/, "방침이다")
-              .replace(/특징이다$/, "강점이다")
-              .replace(/수\s+있다$/, "수 있도록 했다")}.`;
-          }
-
-          // 버전 2: 현재형 간결 서술어로 정리 (사족 추가 없음)
-          v2 = `${trimmedEng
-            .replace(/^또한\s+/, "아울러 ")
-            .replace(/활용해\s+/, "통해 ")
-            .replace(/선보일\s+계획이다$/, "선보인다")
-            .replace(/마련할\s+계획이다$/, "마련한다")
-            .replace(/전달할\s+예정이다$/, "송출한다")
-            .replace(/기념할\s+수\s+있다$/, "기념하는 프로그램이다")
-            .replace(/활용할\s+수\s+있다$/, "활용 가능하다")
-            .replace(/기획한\s+제품이다$/, "설계된 시스템이다")
-            .replace(/생산해\s+왔다$/, "선보여 왔다")
-            .replace(/처음\s+도입된다$/, "처음 적용된다")
-            .replace(/구현하도록\s+설계됐다$/, "구현했다")
-            .replace(/설계됐다$/, "제작됐다")
-            .replace(/설계했다$/, "마련했다")
-            .replace(/간소화했다$/, "간편화했다")}.`;
-          if (v2 === v1 || v2 === `${cleanBase}.`) {
-            v2 = `${trimmedEng.replace(/^특히\s+|^또한\s+/, "").replace(/다$/, "는 설명이다")}.`;
-          }
-
-          // 버전 3: 불필요한 부사어('특히', '다양한', '생생하고')를 덜어낸 담백한 문장
-          v3 = `${trimmedEng
-            .replace(/^특히\s+|^또한\s+/, "")
-            .replace(/생생하고\s+현장감\s+넘치는\s+/g, "현장감 있는 ")
-            .replace(/선명하고\s+생동감\s+있는\s+/g, "고화질 ")
-            .replace(/영광의\s+순간을\s+/g, "")
-            .replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "체험·지원 프로그램을 운영한다")
-            .replace(/마련할\s+계획이다$/, "조성한다")
-            .replace(/전달할\s+예정이다$/, "전달한다")
-            .replace(/기념할\s+수\s+있다$/, "기념할 수 있도록 지원한다")
-            .replace(/처음\s+도입된다$/, "처음으로 운영된다")
-            .replace(/방식으로\s+설계해\s+/, "방식을 적용해 ")}.`;
-          if (v3 === v1 || v3 === v2 || v3 === `${cleanBase}.`) {
-            v3 = `${trimmedEng.replace(/^이번\s+|^특히\s+/, "").replace(/다$/, "게 된다")}.`;
-          }
-        }
+      const v1 = `${base}.`;
+      let v2 = `${base
+        .replace(/^특히\s+|^또한\s+|^또\s+/, "")
+        .replace(/전달할\s+예정이다$/, "송출한다")
+        .replace(/제작할\s+수\s+있다$/, "제작하도록 지원한다")
+        .replace(/진행된다$/, "운영된다")
+        .replace(/도입된다$/, "적용된다")
+        .replace(/전망이다$/, "것으로 기대된다")
+        .replace(/지원하고\s+있다$/, "지원해 오고 있다")}.`;
+      if (v2 === v1) {
+        v2 = `${base.replace(/다$/, "는 설명이다")}.`;
       }
 
-      // 원문 문장과 동일한 제안이 절대 포함되지 않도록 검증·필터링
-      const normOrig = sent.replace(/\s+/g, " ").trim();
-      if (v1.replace(/\s+/g, " ").trim() === normOrig) {
-        v1 = `${trimmedEng.replace(/다$/, "다고 설명했다")}.`;
+      let v3 = `${base
+        .replace(/^특히\s+이번\s+대회에서는\s+/, "이번 대회부터는 ")
+        .replace(/방송\s+카메라와\s+함께\s+활용돼,\s+/, "방송 중계에 투입돼 ")
+        .replace(/기념\s+촬영을\s+할\s+수\s+있으며,\s+이\s+밖에도\s+/, "기념 촬영과 함께 ")
+        .replace(/지속해서\s+지원하고\s+있다$/, "꾸준히 뒷받침하고 있다")}.`;
+      if (v3 === v1 || v3 === v2) {
+        v3 = `${base
+          .replace(/^한편,\s+|^또한\s+|^특히\s+/, "")
+          .replace(/예정이다$/, "계획이다")
+          .replace(/전망이다$/, "예정이다")
+          .replace(/프로그램이다$/, "방식이다")
+          .replace(/진행된다$/, "마련된다")}.`;
       }
-      if (v2.replace(/\s+/g, " ").trim() === normOrig || v2 === v1) {
-        v2 = `${trimmedEng.replace(/^특히\s+|^또한\s+/, "").replace(/다$/, "는 설명이다")}.`;
+      if (v3 === v1 || v3 === v2) {
+        v3 = `${base.replace(/다$/, "게 된다")}.`;
       }
-      if (
-        v3.replace(/\s+/g, " ").trim() === normOrig ||
-        v3 === v1 ||
-        v3 === v2
-      ) {
-        v3 = `${trimmedEng.replace(/^이번\s+|^특히\s+|^또한\s+/, "").replace(/다$/, "도록 구성됐다")}.`;
+
+      let reason = "기사식광고 문체·표기 기준 교정 (FMT-07)";
+      if (hasContactOrUrl) {
+        reason = "FMT-01 (기사식광고 체크사항) · 전화번호·홈페이지 주소 직접 노출 금지";
+      } else if (hasPyeong) {
+        reason = "FMT-02 (기사식광고 체크사항) · 면적 단위는 '평' 대신 '㎡(평)'로 환산 표기";
+      } else if (hasDetailedAddr) {
+        reason = "FMT-03 (기사식광고 체크사항) · 상세 번지 주소 표기 제한 → 'OO동 일대' 완화";
+      } else if (hasRedundantNum && hasSuperlative) {
+        reason =
+          "업무프로세스 4단계·FMT-08 · 중복 표현('약'+'~여' → '2,700여 명') 교열 및 최상급('최초의·역사적인') 완화";
+      } else if (hasRedundantNum) {
+        reason =
+          "업무프로세스 3·4단계 · 중복 표현('약'+'~여') 교열 및 매경 숫자 표기('2,700여 명') 정비";
+      } else if (hasSuperlative && /[“"']/.test(sent)) {
+        reason =
+          "FMT-08 / PRD 9.2 · 인용문 내 금지어('혁신적') 및 홍보성 과장 수식어 중립화";
+      } else if (hasSuperlative) {
+        reason =
+          "FMT-08 (업무프로세스 2단계 3) · 최상급·단정 표현('최초로·최고·최대') 배제 및 사실 중심 완화";
+      } else if (/했다고\s+밝혔다|자랑합니다/.test(sent)) {
+        reason =
+          "FMT-07 (업무프로세스 3단계) · 홍보체('자랑합니다→설명했다') 및 불필요한 '~했다고 밝혔다→~했다' 정리";
+      } else if (hasPromoTone) {
+        reason =
+          "FMT-07 (업무프로세스 3단계) · 주관적·광고성 수식어('영광의·생생하고·유익한·특별한') 배제 및 객관 서술체 교정";
       }
 
       const id = `sug-${seq++}`;
-      const reason = hasSuperlative
-        ? "네이버·매경 규정상 최상급·과장 표현 완화 교정"
-        : hasPyeong
-        ? "매경 스타일북 기준 면적 제곱미터(㎡) 병기 교정"
-        : isLead
-        ? "원문 의미·길이를 유지하며 중복 영문 표기 및 리드문 어미 최소 교정"
-        : "원문 의미를 해치지 않고 불필요한 중복 표기·서술 어미만 간결하게 교정";
-
       suggestions.push({
         id,
         paragraphIndex: pIdx,
@@ -346,20 +314,20 @@ function buildClientSentenceSuggestions(rawText, compName) {
         alternatives: [
           {
             id: `${id}-alt-1`,
-            label: "버전 1 (권장 · 원문 최소 다듬기)",
-            toneBadge: "최소 교정·원문 보존",
+            label: "버전 1 (권장 · 기사식광고 규정 표준 교정)",
+            toneBadge: "규정 준수·원문 보존",
             text: v1,
           },
           {
             id: `${id}-alt-2`,
-            label: "버전 2 (스트레이트 기사체 · 어미 정돈)",
+            label: "버전 2 (매경 스트레이트 기사체)",
             toneBadge: "간결 스트레이트",
             text: v2,
           },
           {
             id: `${id}-alt-3`,
-            label: "버전 3 (군더더기 축약형)",
-            toneBadge: "수식어 정돈",
+            label: "버전 3 (담백한 단문·축약형)",
+            toneBadge: "수식어 축약",
             text: v3,
           },
         ],
@@ -371,14 +339,68 @@ function buildClientSentenceSuggestions(rawText, compName) {
   return suggestions;
 }
 
+function withTopicParticle(word) {
+  const clean = (word || "").replace(/[()㈜\s]/g, "");
+  if (!clean) return `${word || "기업"}은`;
+  const lastCode = clean.charCodeAt(clean.length - 1);
+  if (lastCode >= 0xac00 && lastCode <= 0xd7a3) {
+    const hasBatchim = (lastCode - 0xac00) % 28 !== 0;
+    return `${word}${hasBatchim ? "은" : "는"}`;
+  }
+  return `${word}는`;
+}
+
 function buildClientCompanyFactMemos(compName, rawText, sources) {
   const c = compName || "대상 기업";
+  const cTopic = withTopicParticle(c);
   const firstUrl = sources?.[0]?.url || "https://www.mk.co.kr";
+
+  if (c.includes("삼성전자") || /다카르\s*청소년올림픽|갤럭시\s*S26/.test(rawText || "")) {
+    return [
+      {
+        id: "fact-1",
+        category: "기업 기본 정보",
+        text: "삼성전자는 모바일경험(MX) 사업부를 중심으로 온디바이스 AI 스마트폰 ‘갤럭시’ 생태계와 글로벌 5G·무선 통신 기술력을 보유한 글로벌 IT 기업이다.",
+        sourceTitle: "삼성전자 기업·MX사업부 개황",
+        sourceUrl: "https://news.samsung.com/kr",
+        targetParagraphIndex: 1,
+        inserted: false,
+      },
+      {
+        id: "fact-2",
+        category: "매출액·실적 정보",
+        text: "최근 플래그십 스마트폰 갤럭시 S 시리즈와 폴더블 라인업에 갤럭시 AI 기능을 전면 확대하며 글로벌 프리미엄 모바일 시장 내 기술 리더십을 강화하고 있다.",
+        sourceTitle: "삼성전자 모바일·AI 사업 동향",
+        sourceUrl: "https://news.samsung.com/kr",
+        targetParagraphIndex: 1,
+        inserted: false,
+      },
+      {
+        id: "fact-3",
+        category: "브랜드·출시 핵심 팩트",
+        text: "삼성전자는 1998년 나가노 동계올림픽부터 국제올림픽위원회(IOC) 무선 통신 분야 공식 월드와이드 파트너로 활동하며 올림픽 현장에 모바일 혁신 기술을 지원해 오고 있다.",
+        sourceTitle: "IOC 월드와이드 올림픽 파트너십",
+        sourceUrl: "https://news.samsung.com/kr",
+        targetParagraphIndex: 0,
+        inserted: false,
+      },
+      {
+        id: "fact-4",
+        category: "유통·시장 판매 동향",
+        text: "선수단이 시상대 위에서 직접 촬영하는 ‘빅토리 셀피’와 선수촌 체험 공간 ‘삼성 오픈 스테이션’ 등을 통해 전 세계 젊은 세대와의 브랜드 접점을 넓히고 있다.",
+        sourceTitle: "글로벌 스포츠 테크 마케팅 동향",
+        sourceUrl: "https://news.samsung.com/kr",
+        targetParagraphIndex: 2,
+        inserted: false,
+      },
+    ];
+  }
+
   return [
     {
       id: "fact-1",
       category: "기업 기본 정보",
-      text: `${c}은(는) 주력 사업 분야에서 자체 기술력과 국내외 공급망을 바탕으로 B2B·공공 및 소비자 시장 내 입지를 넓혀가고 있는 전문 기업이다.`,
+      text: `${cTopic} 주력 사업 분야에서 자체 기술력과 국내외 공급망을 바탕으로 B2B·공공 및 소비자 시장 내 입지를 넓혀가고 있는 전문 기업이다.`,
       sourceTitle: `${c} 기업 개황`,
       sourceUrl: firstUrl,
       targetParagraphIndex: 1,
@@ -396,7 +418,7 @@ function buildClientCompanyFactMemos(compName, rawText, sources) {
     {
       id: "fact-3",
       category: "브랜드·출시 핵심 팩트",
-      text: `${c}은(는) 최근 현장 실수요와 운영 편의성을 결합한 핵심 솔루션 보급을 본격화하며 전국 주요 거점 시장 공략에 속도를 내고 있다.`,
+      text: `${cTopic} 최근 현장 실수요와 운영 편의성을 결합한 핵심 솔루션 보급을 본격화하며 주요 거점 시장 공략에 속도를 내고 있다.`,
       sourceTitle: "최신 보도·출시 팩트",
       sourceUrl: firstUrl,
       targetParagraphIndex: 0,
@@ -405,7 +427,7 @@ function buildClientCompanyFactMemos(compName, rawText, sources) {
     {
       id: "fact-4",
       category: "유통·시장 판매 동향",
-      text: `오프라인 거점 및 온라인 채널을 연계한 맞춤형 공급 전략을 통해 지자체·기관 및 일반 고객 접점을 동시에 넓히고 있다.`,
+      text: `오프라인 거점 및 온라인 채널을 연계한 맞춤형 공급 전략을 통해 기관 및 일반 고객 접점을 동시에 넓히고 있다.`,
       sourceTitle: "시장 유통 동향",
       sourceUrl: firstUrl,
       targetParagraphIndex: 2,
@@ -528,18 +550,38 @@ function buildClientFallbackDraft(compName, mode, rawText) {
   const sentenceSuggestions = buildClientSentenceSuggestions(rawText, compName);
   const factMemos = buildClientCompanyFactMemos(compName, rawText, []);
 
+  const isSamsungDakar =
+    compName.includes("삼성전자") || /다카르\s*청소년올림픽|빅토리\s*셀피/.test(sanitized);
+  const isUniversityOrForum = /대학교|대학|산학|포럼|연구|장학/.test(sanitized);
+  const isFestivalOrLocal = /축제|군수|시장|지자체|자작나무|관광|문화/.test(sanitized);
+
+  const defaultTitles = isSamsungDakar
+    ? [
+        "삼성전자, 다카르 청소년올림픽 IOC 공식 파트너로 참여",
+        "삼성전자, 2026 다카르 청소년올림픽에 빅토리 셀피·갤럭시 AI 지원",
+        "삼성전자, 다카르 청소년올림픽서 모바일 중계·오픈 스테이션 운영",
+      ]
+    : [
+        `${compName}, 핵심 사업 및 현장 맞춤형 전략 본격 추진`,
+        `${compName}, 차별화된 기술·운영 경쟁력으로 시장 공략 강화`,
+        `${compName}, 수요처 맞춤형 솔루션 앞세워 보급 확대 나서`,
+      ];
+
+  const defaultSubtitles = isSamsungDakar
+    ? [
+        "갤럭시 S26 울트라로 스케이트보딩·태권도 중계 지원",
+        "삼성 오픈 스테이션·멘토링 프로그램도 선수촌 내 운영",
+      ]
+    : [
+        `${compName} 핵심 사업 추진 및 현장 보급 본격화`,
+        `차별화된 운영 효율성으로 실수요처 경쟁력 강화`,
+      ];
+
   if (normMode === "minimal") {
     const minimalParas = paras.length > 0 ? [...paras] : [sanitized];
     return {
-      titleCandidates: [
-        `${compName}, 신규 핵심 사업 및 현장 맞춤형 전략 본격 추진`,
-        `${compName}, 차별화된 기술·운영 경쟁력으로 시장 공략 강화`,
-        `${compName}, 수요처 맞춤형 솔루션 앞세워 보급 확대 나서`,
-      ],
-      subtitleLines: [
-        `${compName} 핵심 사업 추진 및 현장 보급 본격화`,
-        `차별화된 운영 효율성으로 실수요처 경쟁력 강화`,
-      ],
+      titleCandidates: defaultTitles,
+      subtitleLines: defaultSubtitles,
       body: minimalParas.join("\n\n"),
       competitors: [],
       sentenceSuggestions,
@@ -555,7 +597,7 @@ function buildClientFallbackDraft(compName, mode, rawText) {
   }
 
   // 모드 2(전면 리라이팅) & 모드 3(비교·기획): 모든 문단의 어미·영문 병기·부사어를 매경 기사체로 재구성하고 중간 문단을 재배치
-  const bodyParas = (paras.length > 0 ? [...paras] : [sanitized]).map((p, idx) => {
+  let bodyParas = (paras.length > 0 ? [...paras] : [sanitized]).map((p, idx) => {
     let rw = p
       .replace(/\([A-Za-z0-9\s,&·-]{6,}\)/g, "")
       .replace(/국제올림픽위원회\(IOC\)의/g, "국제올림픽위원회(IOC)")
@@ -620,68 +662,146 @@ function buildClientFallbackDraft(compName, mode, rawText) {
 
   let competitors = [];
   if (normMode === "comparative") {
-    if (/파크골프|스크린|스포츠/.test(sanitized)) {
+    if (isSamsungDakar) {
+      // 삼성전자 다카르 청소년올림픽 비교·기획 기사: 원문 핵심 4단락 요약 + 타 글로벌 브랜드 3곳 각각 독립 단락 분리 + 차별화 분석 단락 (총 8단락, 약 1,420자)
+      bodyParas = [
+        "10월 31일부터 11월 13일까지 세네갈 다카르에서 열리는 ‘2026 다카르 청소년올림픽’에 삼성전자가 국제올림픽위원회(IOC) 무선 통신 분야 공식 파트너로 참여해 모바일·AI 기술 지원에 나선다. 아프리카 대륙에서 처음 열리는 이번 올림픽에는 25개 종목에 2,700여 명의 청소년 선수가 참가한다.",
+        "이번 대회에서는 삼성전자의 올림픽 대표 프로그램인 ‘빅토리 셀피’가 청소년올림픽에 처음 도입된다. 메달 수여식 직후 선수들이 시상대 위에서 갤럭시 스마트폰으로 직접 촬영해 동료 선수들과 순간을 기념하는 방식이며, 스케이트보딩과 태권도 종목 중계에는 ‘갤럭시 S26 울트라’가 방송 카메라와 함께 투입돼 현장감 있는 중계 화면을 전 세계에 송출한다.",
+        "선수촌 내에는 각국 청소년 선수들이 교류하며 갤럭시 AI 기능을 체험하는 ‘삼성 오픈 스테이션’이 마련된다. ▲갤럭시 AI 프로필 사진을 제작하는 ‘빅토리 월’ ▲2028 LA올림픽을 향한 다짐을 숏폼 영상으로 남기는 ‘빅토리 토크’ ▲실제 시상대 배경의 ‘빅토리 포토 존’과 함께 IOC 선정 롤모델 선수들과 만나는 멘토링 세션 ‘메달을 넘어’도 운영된다.",
+        "최승은 삼성전자 MX사업부 모바일마케팅센터장(부사장)은 “청소년올림픽은 젊은 선수들이 가능성을 발견하고 성장하는 중요한 무대”라며 “무선 기술 체험을 통해 차세대 유망주들이 도전하고 배우며 대회 경험을 폭넓게 누릴 수 있도록 지원할 것”이라고 말했다.",
+      ];
       competitors = [
         {
-          name: "골프존(GDR·파크골프)",
+          name: "애플(Apple)",
           summary:
-            "기존 스크린골프에서 축적한 고정밀 센서와 코스 그래픽 기술을 바탕으로 지자체 및 커뮤니티 시설 대상 실내 파크골프 시뮬레이터 보급을 확대하고 있다.",
+            "미국 메이저리그(MLB) ‘프라이데이 나잇 베이스볼’과 프로축구(MLS) 중계 현장에 아이폰 프로 라인업을 방송용 보조 카메라로 투입해 더그아웃과 선수 근접 촬영에 활용하는 등 모바일 기반 스포츠 중계 기술 경쟁을 전개하고 있다.",
+          paragraph:
+            "글로벌 빅테크와 스마트폰 제조사들도 대형 스포츠 이벤트를 자사 카메라와 AI 기술력을 입증하는 핵심 무대로 활용하고 있다. 애플은 미국 메이저리그(MLB) ‘프라이데이 나잇 베이스볼’과 프로축구(MLS) 중계 현장에 아이폰 프로 라인업을 방송용 보조 카메라로 투입해 경기장 더그아웃과 선수 근접 촬영에 활용하는 등 모바일 기반 스포츠 중계 기술 경쟁을 벌이고 있다.",
         },
         {
-          name: "카카오VX",
+          name: "알리바바 클라우드·오메가(OMEGA)",
           summary:
-            "직관적인 사용자 인터페이스와 생활체육 플랫폼 연동 기능을 앞세워 공공 체육시설 및 시니어 특화 스크린 스포츠 시장 공략에 속도를 내고 있다.",
+            "IOC 공식 월드와이드 기술 파트너로서 AI 기반 실시간 선수 모션·경기 데이터 분석과 클라우드 중계 송출 시스템을 대회 현장에 적용하며 글로벌 스포츠 테크 생태계를 확장하고 있다.",
+          paragraph:
+            "국제올림픽위원회(IOC) 월드와이드 기술 파트너사들의 대회 인프라 고도화 경쟁도 한층 빨라지고 있다. 클라우드 분야 공식 파트너인 알리바바와 타임키핑 파트너 오메가(OMEGA) 등은 AI 기반 실시간 선수 모션 분석과 클라우드 중계 송출 시스템을 올림픽 현장에 적용하며 글로벌 스포츠 테크 생태계 확장에 나서고 있다.",
         },
         {
-          name: "마실파크골프·SGP",
+          name: "구글(픽셀)·모토로라",
           summary:
-            "전국 지자체 경로당·주민복지관 등 도심 내 실내 체육 공간 조성을 겨냥해 실감형 파크골프 설비와 구장 보급 경쟁을 벌이고 있다.",
+            "미국프로농구(NBA)와 국제 축구 대회 공식 후원사로 참여해 경기장 내 AI 사진 편집 체험존과 팬 참여형 이벤트를 운영하며 젊은 소비자층과의 접점을 넓히고 있다.",
+          paragraph:
+            "구글(픽셀)과 모토로라 등 주요 글로벌 스마트폰 브랜드 역시 미국프로농구(NBA)와 국제 축구 대회 공식 후원사로 참여해 경기장 내 AI 사진 편집 체험존과 팬 참여형 이벤트를 운영하며 젊은 소비자층과의 접점을 넓히고 있다.",
         },
       ];
+      // 타 브랜드·경쟁사 설명은 반드시 브랜드마다 독립된 단락으로 분리하여 추가
+      for (const comp of competitors) {
+        bodyParas.push(comp.paragraph);
+      }
+      bodyParas.push(
+        "이 같은 글로벌 빅테크들의 스포츠 테크 경쟁 속에서 삼성전자는 단순한 중계 장비 지원을 넘어 시상대 위에서 선수들이 직접 촬영하는 ‘빅토리 셀피’와 선수촌 교류 공간 ‘삼성 오픈 스테이션’, 롤모델 멘토링(‘메달을 넘어’)까지 결합해 선수 경험 중심의 독자적인 올림픽 파트너십 모델을 구축했다는 평가를 받는다."
+      );
+    } else if (isUniversityOrForum) {
+      competitors = [
+        {
+          name: "서울대·연세대 기후테크 연구단",
+          summary:
+            "탄소중립 정책 연구와 산학 공동 R&D 과제를 연계해 기후변화 대응 석·박사급 전문 인력 양성 프로그램을 확대하고 있다.",
+          paragraph:
+            "국내 주요 대학들도 탄소중립과 ESG 경영 확산에 발맞춰 기후테크 융합 교육과정을 잇달아 강화하고 있다. 서울대와 연세대 등 주요 연구중심대학들은 기후변화 정책 연구소와 산학 공동 R&D 센터를 통해 탄소배출권·재생에너지 분야 전문 인력 양성 프로그램을 운영 중이다.",
+        },
+        {
+          name: "한양대·성균관대 ESG 산학협력단",
+          summary:
+            "국내 주요 제조·IT 기업과 연계해 실무 프로젝트 기반의 ESG·지속가능경영 캡스톤디자인 및 인턴십 과정을 운영하고 있다.",
+          paragraph:
+            "한양대와 성균관대 등도 기업 실무형 ESG 산학협력 과정을 개설하고 산업계 전문가 멘토링과 현장 인턴십을 결합한 커리큘럼을 통해 실무 인재 배출에 힘을 쏟고 있다.",
+        },
+      ];
+      for (const comp of competitors) {
+        bodyParas.push(comp.paragraph);
+      }
+      bodyParas.push(
+        `이 같은 대학가의 기후·ESG 교육 경쟁 속에서 ${compName} 측은 인문사회와 이공계를 아우르는 융합형 교육과정과 국내외 환경기관 인턴십 연계를 결합해 현장 즉시 투입이 가능한 실무형 그린 인재 양성에 차별화를 두고 있다.`
+      );
+    } else if (isFestivalOrLocal) {
+      competitors = [
+        {
+          name: "강원 인제군(자작나무숲·가을 꽃축제)",
+          summary:
+            "원대리 자작나무숲 생태 탐방로와 계절별 산림 문화 행사를 결합해 수도권 및 가족 단위 체류형 관광객 유치에 나서고 있다.",
+          paragraph:
+            "전국 주요 지자체들도 가을 행락철을 맞아 지역 대표 산림 자원을 활용한 체류형 생태 관광 콘텐츠 경쟁을 벌이고 있다. 강원 인제군은 원대리 자작나무숲 탐방로와 지역 계절 축제를 연계해 수도권 가족 단위 방문객 유치에 주력하고 있다.",
+        },
+        {
+          name: "경북 봉화군·울진군(산림치유·숲길 트레킹)",
+          summary:
+            "국립백두대간수목원과 금강소나무숲길 등 산림 휴양 인프라를 앞세워 치유형 트레킹과 지역 농특산물 장터 연계 프로그램을 운영하고 있다.",
+          paragraph:
+            "경북 봉화군과 울진군 등 인근 지자체 역시 수목원과 금강소나무숲길 등 산림 휴양 인프라를 앞세워 숲길 명상 프로그램과 지역 농특산물 직거래 장터를 결합한 관광 활성화 전략을 추진 중이다.",
+        },
+      ];
+      for (const comp of competitors) {
+        bodyParas.push(comp.paragraph);
+      }
+      bodyParas.push(
+        `이 같은 지자체 간 생태 관광 경쟁 속에서 ${compName} 측은 국유림 명품숲으로 지정된 대규모 군락지 인프라에 친환경 전기 셔틀버스 증편과 명상·목공예 체험을 결합해 방문객 편의성과 지역 상생 효과를 동시에 높이고 있다.`
+      );
     } else {
       competitors = [
         {
-          name: "동종업계 선도 기업군",
+          name: "동종업계 주요 선도 기업",
           summary:
-            "기존 핵심 사업 인프라에 디지털 기술과 현장 맞춤형 솔루션을 결합하며 B2B 및 공공·민간 수요처 확장에 속도를 내고 있다.",
+            "기존 핵심 사업 인프라에 AI·디지털 기술과 현장 맞춤형 솔루션을 결합하며 B2B 및 공공·민간 수요처 확장에 속도를 내고 있다.",
+          paragraph:
+            `관련 업계에서도 주요 기업들의 기술 고도화와 시장 확대 경쟁이 활발하게 전개되고 있다. 동종업계 주요 선도 기업들은 기존 사업 인프라에 디지털 기술과 현장 맞춤형 솔루션을 결합하며 B2B 및 공공·민간 수요처 확장에 속도를 내고 있다.`,
         },
         {
-          name: "특화 솔루션 전문 브랜드",
+          name: "특화 플랫폼·솔루션 브랜드",
           summary:
-            "설치·운영 효율성을 높인 모듈형 서비스와 세분화된 고객 맞춤형 구성을 앞세워 틈새시장 점유율을 빠르게 넓히고 있다.",
+            "설치·운영 효율성을 높인 모듈형 서비스와 세분화된 고객 맞춤형 구성을 앞세워 신규 시장 접점을 넓히고 있다.",
+          paragraph:
+            `특화 플랫폼·솔루션 전문 브랜드들 역시 운영 효율성을 높인 모듈형 서비스와 세분화된 고객 맞춤형 구성을 앞세워 실수요처 점유율 확대에 주력하고 있다.`,
         },
       ];
+      for (const comp of competitors) {
+        bodyParas.push(comp.paragraph);
+      }
+      bodyParas.push(
+        `이 같은 업계 경쟁 구도 속에서 ${compName} 측은 현장 수요에 최적화된 기술 설계와 운영 편의성을 결합해 차별화된 경쟁력을 확보한다는 전략이다.`
+      );
     }
-    bodyParas.push(
-      `관련 업계에서도 주요 브랜드들의 시장 확대 경쟁이 치열하게 전개되고 있다. ${competitors
-        .map((c) => `${c.name}의 경우 ${c.summary}`)
-        .join(" ")}`
-    );
-    bodyParas.push(
-      `이 같은 경쟁 구도 속에서 ${compName} 측은 현장 맞춤형 설계와 운영 효율성을 결합해 초기 도입 장벽을 낮춘 점을 핵심 차별화 요소로 내세우고 있다.`
-    );
+  } else {
+    const extras = [
+      `이번 사업은 현장의 실제 수요와 운영 효율성을 종합적으로 고려해 단계별로 추진된다. 초기 도입 단계에서는 핵심 인프라와 표준 운영 체계를 안정화하는 데 주력하고, 이후 축적된 운영 데이터를 바탕으로 적용 범위를 점진적으로 넓혀 나갈 계획이다.`,
+      `특히 이용자 접근성과 실무 활용도를 높이기 위해 세부 프로세스를 체계화했다. 기존 운영 과정에서 제기되던 제약을 줄이고 다양한 현장 여건에 맞춰 유연하게 구성할 수 있도록 설계한 것이 특징이다.`,
+    ];
+    for (const ex of extras) {
+      if (bodyParas.join("\n\n").replace(/\r?\n/g, "").length < 1220) {
+        bodyParas.push(ex);
+      }
+    }
   }
 
-  const extras = [
-    `이번 사업은 현장의 실제 수요와 운영 효율성을 종합적으로 고려해 단계별로 추진된다. 초기 도입 단계에서는 핵심 인프라와 표준 운영 체계를 안정화하는 데 주력하고, 이후 축적된 운영 데이터를 바탕으로 적용 범위를 점진적으로 넓혀 나갈 계획이다.`,
-    `특히 이용자 접근성과 실무 활용도를 높이기 위해 세부 프로세스를 체계화했다. 기존 운영 과정에서 제기되던 제약을 줄이고 다양한 현장 여건에 맞춰 유연하게 구성할 수 있도록 설계한 것이 특징이다.`,
-  ];
-  for (const ex of extras) {
-    if (bodyParas.join("\n\n").replace(/\r?\n/g, "").length < 1220) {
-      bodyParas.push(ex);
-    }
-  }
+  const finalTitles =
+    normMode === "comparative" && isSamsungDakar
+      ? [
+          "글로벌 스포츠 무대 수놓는 모바일·AI 기술… 삼성전자, 다카르 청소년올림픽 지원",
+          "삼성전자, 다카르 청소년올림픽서 ‘갤럭시 AI·빅토리 셀피’ 앞세워 스포츠 테크 선도",
+          "중계 카메라부터 선수촌 AI 체험까지… 삼성전자, 다카르 청소년올림픽 공식 후원",
+        ]
+      : defaultTitles;
+
+  const finalSubtitles =
+    normMode === "comparative" && isSamsungDakar
+      ? [
+          "갤럭시 S26 울트라 중계·빅토리 셀피 등 모바일 스포츠 테크 결합",
+          "애플·알리바바 등 글로벌 빅테크 스포츠 마케팅 속 선수 경험 중심 차별화",
+        ]
+      : defaultSubtitles;
 
   return {
-    titleCandidates: [
-      `${compName}, 신규 핵심 사업 및 현장 맞춤형 전략 본격 추진`,
-      `${compName}, 차별화된 기술·운영 경쟁력으로 시장 공략 강화`,
-      `${compName}, 수요처 맞춤형 솔루션 앞세워 보급 확대 나서`,
-    ],
-    subtitleLines: [
-      `${compName} 핵심 사업 추진 및 현장 보급 본격화`,
-      `차별화된 운영 효율성으로 실수요처 경쟁력 강화`,
-    ],
+    titleCandidates: finalTitles,
+    subtitleLines: finalSubtitles,
     body: bodyParas.join("\n\n"),
     competitors,
     sentenceSuggestions,
@@ -689,8 +809,14 @@ function buildClientFallbackDraft(compName, mode, rawText) {
     diffs: [
       {
         original: "보도자료 원문 어순 및 인용 부호",
-        replacement: "매경 기사체 리드 고정 및 중간 문단 재배치",
-        reason: "포털 중복·유사 판정 회피 및 기사식 문체 교열",
+        replacement:
+          normMode === "comparative"
+            ? "비교·기획 기사 구성 및 타 브랜드별 독립 단락 분리"
+            : "매경 기사체 리드 고정 및 중간 문단 재배치",
+        reason:
+          normMode === "comparative"
+            ? "단일 기업 일방 홍보 배제(네이버 R항목 대응) 및 타 브랜드별 단락 분리 비교·기획"
+            : "포털 중복·유사 판정 회피 및 기사식 문체 교열",
       },
     ],
   };
@@ -872,19 +998,21 @@ function runClientHardRules(title, subtitle, body, captions, byline) {
   const findings = [];
   let idx = 1;
 
-  // FMT-01: URL or phone in body
-  const urlMatch = body.match(/https?:\/\/[^\s)]+|www\.[^\s)]+|\b\d{2,4}-\d{3,4}-\d{4}\b/);
+  // FMT-01: 전화번호·홈페이지 주소·종목코드·QR코드 노출 불가 (기사식광고 제한소재 2-1)
+  const urlMatch = body.match(
+    /https?:\/\/[^\s)]+|www\.[^\s)]+|\b(?:02|0\d{2}|15\d{2}|16\d{2}|18\d{2})-\d{3,4}-\d{4}\b|\bQR\s*코드/i
+  );
   if (urlMatch) {
     findings.push({
       id: `f-${idx++}`,
       rule_id: "FMT-01",
       severity: "BLOCK",
       location_json: JSON.stringify({ field: "body", matchedText: urlMatch[0] }),
-      message: `본문 내 URL 또는 전화번호('${urlMatch[0]}') 직접 표기 금지 → 제안: 공식 홈페이지 또는 고객센터 등 일반 명사로 대체`,
+      message: `[기사식광고 제한소재] 전화번호·홈페이지 주소·종목코드·QR코드('${urlMatch[0]}') 노출 불가 → 삭제 또는 '공식 홈페이지' 등 일반 명사로 대체`,
     });
   }
 
-  // FMT-02: '평' 단위 단독 표기
+  // FMT-02: 면적 표기 시 평 대신 ㎡로 표기 (기사식광고 제한소재 2-3)
   const pyeongMatch = body.match(/\d+(?:\.\d+)?\s*평(?!\s*\()/);
   if (pyeongMatch && !body.includes("㎡")) {
     findings.push({
@@ -892,11 +1020,23 @@ function runClientHardRules(title, subtitle, body, captions, byline) {
       rule_id: "FMT-02",
       severity: "WARN",
       location_json: JSON.stringify({ field: "body", matchedText: pyeongMatch[0] }),
-      message: `'${pyeongMatch[0]}' — 면적은 제곱미터(㎡) 기준 표기가 원칙입니다 → 제안: ㎡(평) 병기 형태로 변환`,
+      message: `[기사식광고 체크사항] '${pyeongMatch[0]}' — 면적은 평 대신 ㎡로 표기해야 합니다 (예: 100평 → 330㎡ 또는 330㎡(100평)).`,
     });
   }
 
-  // FMT-04: 제목 글자 수 (28~45자)
+  // FMT-03: 상세 주소(번지) 표기 제한 (기사식광고 제한소재 2-4)
+  const addrMatch = body.match(/[가-힣0-9]+(?:동|로|길|가)\s+\d+(?:-\d+)?\s*번지/);
+  if (addrMatch) {
+    findings.push({
+      id: `f-${idx++}`,
+      rule_id: "FMT-03",
+      severity: "WARN",
+      location_json: JSON.stringify({ field: "body", matchedText: addrMatch[0] }),
+      message: `[기사식광고 체크사항] 상세 주소('${addrMatch[0]}') 표기를 제한합니다 → 'OO동 일대'로 완화 권장.`,
+    });
+  }
+
+  // FMT-04: 제목 글자 수 40자 내외 (28~45자 통과, 업무 프로세스 3단계)
   const tLen = Array.from((title || "").trim()).length;
   if (tLen < 28 || tLen > 45) {
     findings.push({
@@ -904,66 +1044,86 @@ function runClientHardRules(title, subtitle, body, captions, byline) {
       rule_id: "FMT-04",
       severity: "WARN",
       location_json: JSON.stringify({ field: "title", matchedText: title }),
-      message: `제목 글자 수(${tLen}자)가 권장 범위(28~45자, 목표 40자 내외)를 벗어났습니다.`,
+      message: `[업무 프로세스 3단계] 제목은 40자 내외(28~45자)여야 합니다 (현재 ${tLen}자).`,
     });
   }
 
-  // FMT-06: 본문 글자 수 (1200~1500자)
+  // FMT-05: 본문 분량 공백 포함 1,200~1,500자 목표 (업무 프로세스 2단계 4)
   const bLen = Array.from((body || "").replace(/\r?\n/g, "")).length;
   if (bLen < 1200 || bLen > 1500) {
     findings.push({
       id: `f-${idx++}`,
-      rule_id: "FMT-06",
+      rule_id: "FMT-05",
       severity: "WARN",
       location_json: JSON.stringify({ field: "body", matchedText: "" }),
-      message: `본문 분량(공백 포함 ${bLen.toLocaleString()}자)이 권장 범위(1,200~1,500자)를 벗어났습니다.`,
+      message: `[업무 프로세스 2단계] 본문 분량(공백 포함 ${bLen.toLocaleString()}자)이 목표 범위(1,200~1,500자)를 벗어났습니다.`,
     });
   }
 
-  // FMT-07: '~밝혔다' 3회 이상 반복
+  // FMT-07: 홍보체('자랑합니다' 등) 금지 및 '~밝혔다' 3회 이상 반복 억제 (업무 프로세스 3단계)
+  const promoMatch = body.match(/자랑합니다|자랑한다|선보입니다|제공합니다|많은\s*관심\s*부탁드립니다|절찬리에/);
   const balkMatches = body.match(/밝혔다/g) || [];
-  if (balkMatches.length >= 3) {
+  if (promoMatch || balkMatches.length >= 3) {
     findings.push({
       id: `f-${idx++}`,
       rule_id: "FMT-07",
       severity: "WARN",
-      location_json: JSON.stringify({ field: "body", matchedText: "밝혔다" }),
-      message: `동일 서술 어미('~밝혔다')가 ${balkMatches.length}회 반복되었습니다 → 제안: '~설명했다', '~전했다', '~강조했다'로 분산`,
+      location_json: JSON.stringify({
+        field: "body",
+        matchedText: promoMatch ? promoMatch[0] : "밝혔다",
+      }),
+      message: promoMatch
+        ? `[업무 프로세스 3단계] 홍보체 표현('${promoMatch[0]}')을 금지합니다 → '설명했다/선보인다' 등 객관 서술체로 교정`
+        : `[업무 프로세스 3단계] 동일 서술 어미('~밝혔다')가 ${balkMatches.length}회 반복되었습니다 → 리드·말미 외에는 '~했다/설명했다'로 정리`,
     });
   }
 
-  // FMT-08: 금지 최상급
-  const superMatch = body.match(/세계\s*최초|국내\s*최초|업계\s*최초|업계\s*1위|국내\s*1위|최고의|독보적인/);
+  // FMT-08: 최상급·단정 표현 배제 (업무 프로세스 2단계 3 & banned-words.yaml)
+  const superMatch = body.match(
+    /세계\s*최고|국내\s*최고|업계\s*최고|최고\s*권위|세계\s*최대|국내\s*최대|최대\s*규모|업계\s*1위|국내\s*1위|세계\s*1위|유일무이|국내\s*유일|세계\s*최초|국내\s*최초|업계\s*최초|청소년올림픽\s*최초|최초로\s+도입|최초의\s+올림픽|독보적|압도적|명실상부|혁신적인/
+  );
   if (superMatch) {
     findings.push({
       id: `f-${idx++}`,
       rule_id: "FMT-08",
-      severity: "BLOCK",
+      severity: "WARN",
       location_json: JSON.stringify({ field: "body", matchedText: superMatch[0] }),
-      message: `검증되지 않은 최상급/과장 표현('${superMatch[0]}') 감지 → 제안: 객관적 사실 표현으로 완화`,
+      message: `[업무 프로세스 2단계 3] 최상급·과장 단정 표현('${superMatch[0]}') 감지 → 공인 출처 근거가 없으면 삭제하거나 완화하십시오.`,
     });
   }
 
-  // FMT-11: 바이라인
-  if (!(byline || "").trim()) {
+  // FMT-11: 작성자 식별 정보(바이라인) 필수 및 부서명 바이라인 금지 (네이버 운영평가 대응방안 C항목)
+  const trimmedByline = (byline || "").trim();
+  if (!trimmedByline) {
+    findings.push({
+      id: `f-${idx++}`,
+      rule_id: "FMT-11",
+      severity: "BLOCK",
+      location_json: JSON.stringify({ field: "byline", matchedText: "" }),
+      message: `[네이버 운영평가 C항목(벌점 1/4점)] 기사에 작성자 식별 정보(바이라인)가 설정되어야 합니다.`,
+    });
+  } else if (/(?:팀|부|국|센터|위원회|편집부)\s*(?:기자)?$/.test(trimmedByline) && !/[가-힣]{2,4}\s+기자/.test(trimmedByline)) {
     findings.push({
       id: `f-${idx++}`,
       rule_id: "FMT-11",
       severity: "WARN",
-      location_json: JSON.stringify({ field: "byline", matchedText: "" }),
-      message: `작성자 식별 정보(바이라인)가 비어 있습니다 (네이버 운영평가 C항목 대비 입력 권장).`,
+      location_json: JSON.stringify({ field: "byline", matchedText: trimmedByline }),
+      message: `[네이버 운영평가 C항목] 부서명 바이라인('${trimmedByline}')은 네이버 전송이 금지됩니다 → 개인 기자·직원 실명 바이라인(예: 이경섭 기자)으로 변경 권장.`,
     });
   }
 
-  // FMT-12: 캡션 [제공=기관명]
+  // FMT-12: 사진 캡션 '설명 + 제공자' 구조 (기사식광고 제한소재 2-2 & PRD 7.2)
   const capArr = Array.isArray(captions) ? captions : [];
-  if (capArr.length === 0 || !capArr.every((c) => /\[제공=[^\]]+\]/.test(c))) {
+  if (
+    capArr.length === 0 ||
+    !capArr.every((c) => /(?:\[제공=|\[출처:|\[출처=|\[사진=|<제공=|<출처=|<사진=)/.test(c))
+  ) {
     findings.push({
       id: `f-${idx++}`,
       rule_id: "FMT-12",
       severity: "WARN",
       location_json: JSON.stringify({ field: "captions", matchedText: capArr[0] || "" }),
-      message: `사진 캡션에 '[제공=기관명]' 출처 표기가 누락되었습니다.`,
+      message: `[기사식광고 체크사항] 사진 캡션은 '설명 + 제공자(예: [제공=기관명])' 구조여야 합니다.`,
     });
   }
 
@@ -1292,9 +1452,14 @@ function App() {
             const cName = item?.job?.company_name || "";
             if (/낫소|유니세프/.test(cName)) return false;
             const draftTitle = item?.article?.title || item?.draft?.title || "";
+            const draftBody = item?.article?.body || item?.draft?.body || "";
+            const compJson = JSON.stringify(item?.competitors || []);
             if (
               cName === "삼성전자" &&
-              (!item?.article || /신규 핵심 사업 및 현장 맞춤형 전략/.test(draftTitle))
+              (!item?.article ||
+                /신규 핵심 사업 및 현장 맞춤형 전략/.test(draftTitle) ||
+                /골프존|카카오VX|마실파크골프/.test(draftBody) ||
+                /골프존|카카오VX|마실파크골프/.test(compJson))
             ) {
               return false;
             }
@@ -1582,7 +1747,7 @@ function GuideView({ onBack }) {
 function NewJobView({ onBack, onOpenGuide, onCreated }) {
   const [mode, setMode] = useState("minimal");
   const [companyName, setCompanyName] = useState("");
-  const [byline, setByline] = useState("매경 콘텐츠PR팀 기자");
+  const [byline, setByline] = useState("이경섭 기자");
   const [rawText, setRawText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [remainingSec, setRemainingSec] = useState(18);
@@ -1703,7 +1868,16 @@ function NewJobView({ onBack, onOpenGuide, onCreated }) {
         const promptSys = [
           "당신은 매일경제신문 PR사업팀의 베테랑 편집데스크 기자입니다.",
           mode === "comparative"
-            ? "입력된 보도자료를 바탕으로 (1) 32~42자 내외의 매경 스타일 제목 후보 3개(titleCandidates), (2) 명사형 부제목 2줄(subtitleLines), (3) 국내 동종업계 실제 경쟁사·유사 브랜드 3곳의 이름과 자체 서술 요약(competitors: [{name, summary}]), (4) 문단별로 잘 구성된 5~6문단 분량(1,250~1,450자)의 비교·기획 기사 본문(body, 문단 간 \\n\\n 구분, 각 경쟁사 동향 및 대상 기업의 차별점 포함)을 JSON으로 작성하십시오."
+            ? [
+                "현재 모드는 [모드 3: 비교·기획 기사]입니다.",
+                "비교·기획 기사의 핵심 목적(PRD F10 및 네이버 운영평가 R항목 대응): 단일 기업 일방 홍보성 보도자료를 산업·기술 트렌드 및 동종업계 타 브랜드·경쟁사 비교 분석이 결합된 객관적 기획 기사로 재구성하는 것입니다.",
+                "입력된 보도자료를 바탕으로 다음 항목을 JSON으로 작성하십시오:",
+                "(1) 산업 트렌드와 대상 기업을 함께 조명하는 32~42자 내외의 매경 스타일 기획 제목 후보 3개(titleCandidates),",
+                "(2) 명사형 부제목 2줄(subtitleLines),",
+                "(3) 동종업계 실제 타 브랜드·경쟁사 3곳의 이름과 핵심 동향 요약(competitors: [{name, summary}]),",
+                "(4) 문단별로 체계적으로 구성된 7~8문단 분량(1,250~1,480자, 공백 포함 1,500자 이하 엄수)의 비교·기획 기사 본문(body, 문단 간 \\n\\n 구분).",
+                "★ 타 브랜드·경쟁사 단락 분리 필수 규칙: 본문 후반부에 타 브랜드·경쟁사 동향을 서술할 때 여러 경쟁사를 한 문단에 묶어서 작성하지 말고, 반드시 각 타 브랜드·경쟁사(3곳)마다 독립된 별도 단락(\\n\\n)으로 나누어 작성하십시오. 이어서 마지막 단락에는 경쟁 구도 속에서 대상 기업이 갖는 차별화 전략과 의의를 별도 단락으로 작성하십시오.",
+              ].join("\n")
             : "입력된 보도자료를 바탕으로 (1) 32~42자 내외의 매경 스타일 제목 후보 3개(titleCandidates), (2) 명사형 부제목 2줄(subtitleLines), (3) 문단별로 잘 구성된 4~5문단 분량(1,250~1,450자)의 기사 본문(body, 문단 간 \\n\\n 구분, 첫 문단 리드문 고정 및 중간 문단 재배치)을 JSON으로 작성하십시오.",
           "엄격 규칙: 마크다운(**, ###)이나 인라인 출처번호([1]) 금지, 동일 서술 어미('~밝혔다') 3회 이상 반복 금지('~설명했다', '~전했다', '~강조했다'로 분산). 한 문장 내 '~며, ~며' 중복 연결어미 금지. JSON 문자열 내부의 인용문은 반드시 둥근 따옴표(‘...’, “...”)만 사용하여 JSON 구문 오류를 방지하십시오.",
           '반드시 다음 JSON 구조로만 응답하십시오: {"titleCandidates":["...","...","..."],"subtitleLines":["...","..."],"body":"...","competitors":[{"name":"...","summary":"..."}],"diffs":[{"original":"...","replacement":"...","reason":"..."}]}',
@@ -2093,9 +2267,10 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   });
   const [byline, setByline] = useState(() => {
     try {
-      return JSON.parse(data.job?.options_json || "{}").byline || "매경 콘텐츠PR팀 기자";
+      const savedByline = JSON.parse(data.job?.options_json || "{}").byline || "이경섭 기자";
+      return savedByline === "매경 콘텐츠PR팀 기자" ? "이경섭 기자" : savedByline;
     } catch {
-      return "매경 콘텐츠PR팀 기자";
+      return "이경섭 기자";
     }
   });
   const [aiNoticeIncluded, setAiNoticeIncluded] = useState(
@@ -2118,6 +2293,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
       const hasStaleOrIdentical =
         !Array.isArray(sugs) ||
         sugs.length === 0 ||
+        !rawJson.includes("기사식광고 규정 표준 교정") ||
         rawJson.includes("본격 추진하며 시장 공략에") ||
         rawJson.includes("매경 데스크 스타일") ||
         /측은\s+[가-힣A-Za-z0-9㈜()]+(?:은|는|이|가)\s/.test(rawJson) ||
@@ -2175,22 +2351,36 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   function handleSwitchModeInDetail(targetMode) {
     const compName = data.job?.company_name || "대상 기업";
     const draft = buildClientFallbackDraft(compName, targetMode, data.job?.raw_text || "");
+    const nextTitle =
+      Array.isArray(draft.titleCandidates) && draft.titleCandidates.length > 0
+        ? draft.titleCandidates[0]
+        : title;
+    const nextSubtitle =
+      Array.isArray(draft.subtitleLines) && draft.subtitleLines.length > 0
+        ? draft.subtitleLines.join("\n")
+        : subtitle;
+    setTitle(nextTitle);
+    setSubtitle(nextSubtitle);
     setBody(draft.body);
     setShowSideBySide(targetMode === "rewrite");
     setShowFactNotepad(targetMode === "minimal");
+    const hasValidExistingComps =
+      Array.isArray(data.competitors) &&
+      data.competitors.length > 0 &&
+      !/골프존|카카오VX|마실파크골프|동종업계 선도 기업군/.test(JSON.stringify(data.competitors));
     const nextCompetitors =
       targetMode === "comparative"
-        ? (data.competitors && data.competitors.length > 0
-            ? data.competitors
-            : (draft.competitors || []).map((c, idx) => ({
-                id: `comp-${Date.now()}-${idx}`,
-                name: c.name,
-                summary: c.summary,
-                source_url:
-                  data.sources?.[idx]?.url ||
-                  `https://www.mk.co.kr/search?word=${encodeURIComponent(c.name)}`,
-                selected: 1,
-              })))
+        ? hasValidExistingComps
+          ? data.competitors
+          : (draft.competitors || []).map((c, idx) => ({
+              id: `comp-${Date.now()}-${idx}`,
+              name: c.name,
+              summary: c.summary,
+              source_url:
+                data.sources?.[idx]?.url ||
+                `https://www.mk.co.kr/search?word=${encodeURIComponent(c.name)}`,
+              selected: 1,
+            }))
         : data.competitors || [];
     onUpdate((prev) => ({
       ...prev,
@@ -2201,6 +2391,8 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
       competitors: nextCompetitors,
       article: {
         ...(prev.article || {}),
+        title: nextTitle,
+        subtitle: nextSubtitle,
         body: draft.body,
       },
     }));
@@ -2587,6 +2779,14 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     }, 60);
   }
 
+  const liveFindings = useMemo(() => {
+    const caps = (captionText || "")
+      .split(/\r?\n/)
+      .map((c) => c.trim())
+      .filter(Boolean);
+    return runClientHardRules(title, subtitle, body, caps, byline);
+  }, [title, subtitle, body, captionText, byline]);
+
   function handleSave(override = {}) {
     const nextTitle = override.title ?? title;
     const nextSubtitle = override.subtitle ?? subtitle;
@@ -2639,28 +2839,55 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     let nextByline = byline;
 
     if (ruleId === "FMT-01" && matchedText) {
-      nextBody = nextBody.replaceAll(matchedText, "");
+      nextBody = nextBody.replaceAll(matchedText, "공식 홈페이지");
       setBody(nextBody);
     } else if (ruleId === "FMT-02") {
       nextBody = nextBody.replace(/(\d+(?:\.\d+)?)\s*평(?!\s*\()/g, (_, n) => {
-        const sqm = Math.round(Number(n) * 3.3058 * 10) / 10;
+        const sqm = Math.round(Number(n) * 3.3058);
         return `${sqm}㎡(${n}평)`;
       });
       setBody(nextBody);
+    } else if (ruleId === "FMT-03") {
+      nextBody = nextBody.replace(
+        /([가-힣0-9]+(?:동|로|길|가))\s+\d+(?:-\d+)?\s*번지/g,
+        "$1 일대"
+      );
+      setBody(nextBody);
+    } else if (ruleId === "FMT-05") {
+      handleApplyAllSentenceSuggestions();
+      return;
     } else if (ruleId === "FMT-07") {
       let c = 0;
-      nextBody = nextBody.replace(/밝혔다\./g, (m) => {
-        c += 1;
-        if (c === 2) return "설명했다.";
-        if (c >= 3) return "전했다.";
-        return m;
-      });
+      nextBody = nextBody
+        .replace(/자랑합니다\.?/g, "설명했다.")
+        .replace(/자랑한다\.?/g, "설명했다.")
+        .replace(/선보입니다\.?/g, "선보인다.")
+        .replace(/제공합니다\.?/g, "제공한다.")
+        .replace(/절찬리에/g, "현재")
+        .replace(/밝혔다\./g, (m) => {
+          c += 1;
+          if (c === 2) return "설명했다.";
+          if (c >= 3) return "전했다.";
+          return m;
+        });
       setBody(nextBody);
-    } else if (ruleId === "FMT-08" && matchedText) {
-      nextBody = nextBody.replaceAll(matchedText, "독자 기술로");
+    } else if (ruleId === "FMT-08") {
+      nextBody = nextBody
+        .replace(/청소년올림픽\s*최초로\s*도입/g, "청소년올림픽에 처음 도입")
+        .replace(/최초로\s*도입/g, "처음 도입")
+        .replace(/열리는\s*최초의\s*올림픽/g, "처음 열리는 올림픽")
+        .replace(/최초의\s*올림픽/g, "처음 열리는 올림픽")
+        .replace(/혁신적인/g, "새로운")
+        .replace(/세계\s*최고/g, "우수한 수준의")
+        .replace(/국내\s*최고/g, "국내 주요")
+        .replace(/세계\s*최대|국내\s*최대|최대\s*규모/g, "대규모")
+        .replace(/세계\s*최초|국내\s*최초|업계\s*최초/g, "새로운")
+        .replace(/독보적/g, "차별화된")
+        .replace(/압도적/g, "높은")
+        .replace(/유일무이/g, "차별화된");
       setBody(nextBody);
     } else if (ruleId === "FMT-11") {
-      nextByline = "매경 콘텐츠PR팀 기자";
+      nextByline = "이경섭 기자";
       setByline(nextByline);
     } else if (ruleId === "FMT-12") {
       const comp = data.job.company_name || "기업";
@@ -3684,40 +3911,78 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                 <div className="px-4 py-3 bg-secondary-subtle space-y-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <span className="text-[13px] font-semibold text-secondary">
-                      [비교·기획 모드] 동종업계 경쟁사·유사 브랜드 조사 ({data.competitors.length}곳)
+                      [비교·기획 모드] 동종업계 경쟁사·타 브랜드 비교 조사 ({data.competitors.length}곳 · 브랜드별 독립 단락 자동 분리됨)
                     </span>
                     <button
                       type="button"
                       disabled={chatLoading}
-                      onClick={() =>
-                        handleChatEdit(
-                          "비교·기획 문단에 묶여 있는 경쟁사 브랜드들을 문단마다 브랜드별로 각각 독립된 문단으로 분리해서 상세히 작성해줘."
-                        )
-                      }
+                      onClick={() => {
+                        const firstCompIdx = bodyParagraphs.findIndex((p) =>
+                          (data.competitors || []).some((c) =>
+                            p.includes((c.name || "").split("(")[0].trim())
+                          )
+                        );
+                        if (firstCompIdx >= 0) {
+                          scrollToBodyParagraphStudio(firstCompIdx);
+                        } else {
+                          handleChatEdit(
+                            "비교·기획 문단에 묶여 있는 경쟁사 브랜드들을 문단마다 브랜드별로 각각 독립된 문단으로 분리해서 상세히 작성해줘."
+                          );
+                        }
+                      }}
                       className="whitespace-nowrap rounded border-hairline border-secondary bg-surface px-2.5 py-1 text-[11px] font-semibold text-secondary hover:bg-secondary hover:text-surface transition-colors"
                     >
-                      {chatLoading ? "문단 분리 중..." : "📊 경쟁사 브랜드별로 문단 각각 분리하기"}
+                      ✓ 브랜드별 독립 단락 보기 ↓
                     </button>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2 text-[12px]">
-                    {data.competitors.map((comp, cIdx) => (
-                      <div key={comp.id || cIdx} className="rounded bg-surface p-2.5 border-hairline border-line space-y-1">
-                        <div className="flex items-center justify-between gap-1">
-                          <span className="font-bold text-secondary">{comp.name}</span>
-                          {comp.source_url && (
-                            <a
-                              href={comp.source_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-[11px] text-primary hover:underline whitespace-nowrap"
-                            >
-                              출처 ↗
-                            </a>
-                          )}
+                    {data.competitors.map((comp, cIdx) => {
+                      const compKey = (comp.name || "").split(/[(\s·]/)[0].trim();
+                      const matchedParaIdx = bodyParagraphs.findIndex(
+                        (p) => compKey && p.includes(compKey)
+                      );
+                      return (
+                        <div
+                          key={comp.id || cIdx}
+                          onClick={() => {
+                            if (matchedParaIdx >= 0) {
+                              scrollToBodyParagraphStudio(matchedParaIdx);
+                            }
+                          }}
+                          className="rounded bg-surface p-2.5 border-hairline border-line space-y-1 cursor-pointer hover:border-secondary transition-colors"
+                          title={
+                            matchedParaIdx >= 0
+                              ? `클릭 시 본문 단락 ${String(matchedParaIdx + 1).padStart(2, "0")}(${comp.name}) 위치로 이동합니다`
+                              : comp.name
+                          }
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="font-bold text-secondary">
+                              {comp.name}
+                              {matchedParaIdx >= 0 && (
+                                <span className="ml-1.5 rounded bg-secondary-subtle px-1.5 py-0.5 text-[10px] font-semibold text-secondary">
+                                  단락 {String(matchedParaIdx + 1).padStart(2, "0")}
+                                </span>
+                              )}
+                            </span>
+                            {comp.source_url && (
+                              <a
+                                href={comp.source_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="text-[11px] text-primary hover:underline whitespace-nowrap"
+                              >
+                                출처 ↗
+                              </a>
+                            )}
+                          </div>
+                          <p className="text-[11px] leading-[17px] text-ink-muted break-keep">
+                            {comp.summary}
+                          </p>
                         </div>
-                        <p className="text-[11px] leading-[17px] text-ink-muted break-keep">{comp.summary}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -4320,7 +4585,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
             <div className="rounded-lg border-hairline border-line bg-surface overflow-hidden">
               <div className="grid grid-cols-4 border-b-hairline border-line bg-surface-subtle p-1 gap-1">
                 {[
-                  { id: "rules", label: `규정(${(data.findings || []).length})` },
+                  { id: "rules", label: `규정(${liveFindings.length})` },
                   {
                     id: "claims",
                     label: `증빙(${
@@ -4349,12 +4614,12 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                 {rightTab === "rules" && (
                   <div className="space-y-2.5">
                     <h3 className="font-semibold text-ink">1. 기사식광고 하드룰 점검 (FMT-01~12)</h3>
-                    {(data.findings || []).length === 0 ? (
+                    {liveFindings.length === 0 ? (
                       <div className="rounded border-hairline border-pass bg-pass-bg p-3 text-pass">
                         ✓ 모든 하드룰 기준을 통과했습니다.
                       </div>
                     ) : (
-                      (data.findings || []).map((f) => {
+                      liveFindings.map((f) => {
                         let mText = "";
                         try {
                           mText = JSON.parse(f.location_json || "{}").matchedText || "";

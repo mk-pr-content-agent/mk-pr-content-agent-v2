@@ -1719,6 +1719,9 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   const [expandOriginalBox, setExpandOriginalBox] = useState(true);
   const [showSideBySide, setShowSideBySide] = useState(false);
   const [paragraphMode, setParagraphMode] = useState(true);
+  const [cleanFullView, setCleanFullView] = useState(false);
+  const [rightPaneCleanText, setRightPaneCleanText] = useState(false);
+  const [quickCopyFeedback, setQuickCopyFeedback] = useState(null);
   const [showInlineDiffHighlight, setShowInlineDiffHighlight] = useState(true);
   const [tallParagraphs, setTallParagraphs] = useState(false);
   const [focusedParaIdx, setFocusedParaIdx] = useState(null);
@@ -2264,6 +2267,34 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     setTimeout(() => setCopyFeedback(null), 3000);
   }
 
+  async function handleQuickCopyRewritten(targetType = "body") {
+    handleSave();
+    const joiner = blankLineCopy ? "\n\n" : "\n";
+    const cleanBody = bodyParagraphs.join(joiner);
+    const textToCopy =
+      targetType === "all"
+        ? [title.trim(), subtitle.trim(), cleanBody, captionText.trim()]
+            .filter(Boolean)
+            .join("\n\n")
+        : cleanBody;
+    try {
+      await navigator.clipboard.writeText(textToCopy);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = textToCopy;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+    }
+    setQuickCopyFeedback(
+      targetType === "all"
+        ? "✓ 제목+부제+리라이팅 본문 전체가 복사되었습니다!"
+        : "✓ 리라이팅된 본문 전체가 클립보드에 복사되었습니다!"
+    );
+    setTimeout(() => setQuickCopyFeedback(null), 3000);
+  }
+
   function renderOriginalWithHighlightsStudio() {
     return (
       <div className="space-y-3 text-[14px] leading-[24px] text-ink">
@@ -2510,7 +2541,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                 key={`${paraIdx}-${sIdx}-fact`}
                 className="mr-1.5 inline rounded bg-pass-bg text-pass border-b-2 border-pass font-semibold px-1.5 py-0.5 break-keep"
               >
-                <span className="mr-1 inline-flex items-center whitespace-nowrap rounded bg-pass px-1.5 py-0.2 text-[10px] font-semibold text-surface">
+                <span className="mr-1 inline-flex items-center whitespace-nowrap rounded bg-pass px-1.5 py-0.2 text-[10px] font-semibold text-surface select-none">
                   📌 {matchedFact.category}
                 </span>
                 <span>{sent}</span>
@@ -2545,7 +2576,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                 key={`${paraIdx}-rw-${sIdx}`}
                 className="inline rounded-sm bg-[#FEF9C3] border-b border-[#EAB308] text-ink px-1.5 py-0.5 mr-1.5"
               >
-                <span className="mr-1 rounded bg-[#FEF08A] border-hairline border-[#EAB308] px-1 py-0.2 text-[10px] font-semibold text-[#854D0E]">
+                <span className="mr-1 rounded bg-[#FEF08A] border-hairline border-[#EAB308] px-1 py-0.2 text-[10px] font-semibold text-[#854D0E] select-none">
                   리라이팅·재구성
                 </span>
                 <span>{sent}</span>
@@ -2991,29 +3022,71 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                 </div>
               )}
 
-              {/* 3. 본문 영역: [왼쪽 화면] 원문에 교정 표시(빨간색 표시/초록색 교체) | [오른쪽 화면] 수정 완료된 원문 글 바로 보여주기 (좌우 2분할) */}
+              {/* 3. 본문 영역: [왼쪽 화면] 원문에 교정 표시(빨간색 표시/초록색 교체) | [오른쪽 화면] 수정 완료된 원문 글 바로 보여주기 (좌우 2분할) 및 [전체 리라이팅된 글만 보기 + 바로 복사] */}
               <div className="p-4 space-y-3 flex-1">
                 {/* 상단 본문 툴바 */}
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border-hairline border-line bg-surface-subtle px-3.5 py-2.5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="inline-flex h-[24px] items-center rounded bg-primary px-2.5 text-[12px] font-bold text-surface whitespace-nowrap">
-                      좌우 2분할 비교·교정 화면
-                    </span>
+                    <div className="inline-flex items-center rounded-md border-hairline border-line bg-surface p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setCleanFullView(false)}
+                        className={`h-[26px] rounded px-2.5 text-[12px] font-bold whitespace-nowrap transition-colors ${
+                          !cleanFullView
+                            ? "bg-primary text-surface"
+                            : "text-ink-muted hover:text-ink"
+                        }`}
+                      >
+                        ◫ 좌우 2분할 비교 보기
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCleanFullView(true)}
+                        className={`h-[26px] rounded px-2.5 text-[12px] font-bold whitespace-nowrap transition-colors ${
+                          cleanFullView
+                            ? "bg-primary text-surface"
+                            : "text-primary hover:bg-primary-subtle"
+                        }`}
+                      >
+                        📄 전체 리라이팅된 글만 보기
+                      </button>
+                    </div>
                     {effectiveMode === "minimal" ? (
                       <span className="text-[12px] font-semibold text-pass whitespace-nowrap">
                         ✓ 교정 제안 {sentenceSuggestions.length}건 중{" "}
                         {sentenceSuggestions.filter((s) => Boolean(s.selectedAltId)).length}건 초록색 교체 완료
                       </span>
                     ) : (
-                      <span className="rounded bg-[#FEF9C3] border-hairline border-[#EAB308] px-2 py-0.5 text-[11px] font-semibold text-[#854D0E] whitespace-nowrap">
-                        연한 노란색 = 원문 대비 수정·재구성된 문장
-                      </span>
+                      !cleanFullView && (
+                        <span className="rounded bg-[#FEF9C3] border-hairline border-[#EAB308] px-2 py-0.5 text-[11px] font-semibold text-[#854D0E] whitespace-nowrap">
+                          연한 노란색 = 원문 대비 수정·재구성된 문장
+                        </span>
+                      )
                     )}
                     <span className="text-[12px] text-ink-muted whitespace-nowrap">
                       (총 {bodyParagraphs.length}문단 · 공백 포함 {bodyCharCount.toLocaleString()}자)
                     </span>
+                    {quickCopyFeedback && (
+                      <span className="inline-flex items-center rounded bg-pass-bg border-hairline border-pass px-2.5 py-0.5 text-[11px] font-bold text-pass whitespace-nowrap">
+                        {quickCopyFeedback}
+                      </span>
+                    )}
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickCopyRewritten("body")}
+                      className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md bg-pass px-3 text-[12px] font-bold text-surface hover:opacity-90"
+                    >
+                      📋 리라이팅 본문 바로 복사
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickCopyRewritten("all")}
+                      className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md border-hairline border-primary bg-primary-subtle px-2.5 text-[11px] font-bold text-primary hover:opacity-90"
+                    >
+                      📋 제목+본문 전체 복사
+                    </button>
                     {effectiveMode === "minimal" && (
                       <button
                         type="button"
@@ -3035,115 +3108,264 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                       onClick={() => setParagraphMode((v) => !v)}
                       className="h-[28px] whitespace-nowrap rounded border-hairline border-line bg-surface px-2.5 text-[11px] font-medium"
                     >
-                      {paragraphMode ? "우측 통문장 직접 편집" : "우측 문단별 보기"}
+                      {paragraphMode ? "통문장 직접 편집" : "문단별 보기"}
                     </button>
                   </div>
                 </div>
 
-                {/* 좌우 2분할 메인 그리드 */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-                  {/* 왼쪽 화면: 원문에 교정 표시 (빨간색 표시 / 초록색 교체) */}
-                  <div className="rounded-lg border-hairline border-line bg-surface-subtle overflow-hidden flex flex-col">
-                    <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 border-b-hairline border-line bg-surface">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex h-[22px] items-center rounded bg-ink px-2 text-[11px] font-bold text-surface whitespace-nowrap">
-                          왼쪽 화면 · 원문에 교정 표시
-                        </span>
-                        <span className="text-[11px] text-ink-muted break-keep">
-                          <strong className="text-reject">빨간색 표시</strong> 클릭 → 수정 문장 선택 시 <strong className="text-pass">초록색 교체</strong>
-                        </span>
-                      </div>
-                      <span className="text-[11px] font-semibold text-ink-muted whitespace-nowrap">
-                        원문 {rawParagraphs.length}단락
-                      </span>
-                    </div>
-                    <div className="p-3.5 max-h-[780px] overflow-y-auto">
-                      {renderOriginalWithHighlightsStudio()}
-                    </div>
-                  </div>
-
-                  {/* 오른쪽 화면: 수정 완료된 원문 글 바로 보여주기 (수정된 내용만 깔끔하게 표시) */}
+                {cleanFullView ? (
+                  /* 전체 리라이팅된 글만 보기 (클린 전문 뷰 + 바로 복사) */
                   <div className="rounded-lg border-hairline border-primary bg-surface overflow-hidden flex flex-col">
-                    <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 border-b-hairline border-line bg-primary-subtle/50">
-                      <div className="flex items-center gap-2">
-                        <span className="inline-flex h-[22px] items-center rounded bg-primary px-2 text-[11px] font-bold text-surface whitespace-nowrap">
-                          오른쪽 화면 · 수정 완료된 기사 전문
+                    <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b-hairline border-line bg-primary-subtle/50">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex h-[24px] items-center rounded bg-primary px-2.5 text-[12px] font-bold text-surface whitespace-nowrap">
+                          📄 전체 리라이팅된 글만 보기 (클린 전문)
                         </span>
-                        <span className="text-[11px] text-ink-muted break-keep">
-                          교체·수정된 내용만 반영된 최종 원고입니다
+                        <span className="text-[12px] text-ink-muted break-keep">
+                          태그나 배지 없이 순수 리라이팅된 기사 전문만 한눈에 읽고 바로 드래그하거나 복사할 수 있습니다.
                         </span>
                       </div>
-                      <span
-                        className={`text-[11px] font-semibold whitespace-nowrap ${
-                          isBodyInRange ? "text-pass" : "text-hold"
-                        }`}
-                      >
-                        {bodyCharCount.toLocaleString()}자
-                      </span>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleQuickCopyRewritten("body")}
+                          className="inline-flex h-[30px] items-center whitespace-nowrap rounded-md bg-pass px-3.5 text-[12px] font-bold text-surface hover:opacity-90"
+                        >
+                          📋 본문 전체 바로 복사
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleQuickCopyRewritten("all")}
+                          className="inline-flex h-[30px] items-center whitespace-nowrap rounded-md border-hairline border-primary bg-surface px-3 text-[12px] font-bold text-primary hover:bg-primary-subtle"
+                        >
+                          📋 제목+부제+본문 전체 복사
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setCleanFullView(false)}
+                          className="inline-flex h-[30px] items-center whitespace-nowrap rounded-md border-hairline border-line bg-surface px-2.5 text-[11px] font-semibold text-ink-muted hover:text-ink"
+                        >
+                          ◫ 좌우 2분할 비교 화면으로 돌아가기
+                        </button>
+                      </div>
                     </div>
 
-                    <div className="p-3.5 max-h-[780px] overflow-y-auto space-y-3">
-                      {paragraphMode ? (
-                        bodyParagraphs.map((para, idx) => (
-                          <div
-                            id={`body-para-${idx}`}
-                            key={idx}
-                            className="rounded-md border-hairline border-line bg-surface-subtle/50 p-3 space-y-2"
-                          >
-                            <div className="flex items-center justify-between border-b-hairline border-line pb-1 text-[11px]">
-                              <span className="font-semibold text-primary whitespace-nowrap">
-                                수정 단락 {String(idx + 1).padStart(2, "0")} ({Array.from(para).length}자)
-                              </span>
-                              <div className="flex items-center gap-1">
-                                <button
-                                  type="button"
-                                  disabled={idx === 0}
-                                  onClick={() => moveParagraph(idx, -1)}
-                                  className="whitespace-nowrap rounded border-hairline border-line bg-surface px-1.5 py-0.5 text-[10px] disabled:opacity-40"
-                                >
-                                  ↑ 위로
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={idx === bodyParagraphs.length - 1}
-                                  onClick={() => moveParagraph(idx, 1)}
-                                  className="whitespace-nowrap rounded border-hairline border-line bg-surface px-1.5 py-0.5 text-[10px] disabled:opacity-40"
-                                >
-                                  ↓ 아래로
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="rounded border-hairline border-line bg-surface p-3">
-                              {effectiveMode === "minimal"
-                                ? renderMinimalParagraphStudio(para, idx)
-                                : renderRewriteYellowHighlightsStudio(para, idx)}
-                            </div>
-
-                            <details className="group">
-                              <summary className="cursor-pointer text-[11px] font-medium text-ink-muted hover:text-primary select-none">
-                                ✎ 단락 {String(idx + 1).padStart(2, "0")} 직접 타이핑 편집 열기
-                              </summary>
-                              <textarea
-                                rows={3}
-                                value={para}
-                                onChange={(e) => updateParagraph(idx, e.target.value)}
-                                className="mt-1.5 w-full rounded border-hairline border-line bg-surface p-2 text-[13px] leading-[21px]"
-                              />
-                            </details>
+                    <div className="p-5 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                      {/* 좌측 7컬럼: 깔끔하게 정돈된 리라이팅 기사 전문 읽기·드래그 복사 시트 */}
+                      <div className="lg:col-span-7 rounded-lg border-hairline border-line bg-surface p-5 space-y-4">
+                        <div className="flex items-center justify-between border-b-hairline border-line pb-3">
+                          <div className="space-y-1">
+                            <span className="text-[11px] font-bold text-primary uppercase">
+                              완성된 리라이팅 기사 전문 (드래그 또는 버튼으로 즉시 복사)
+                            </span>
+                            <h2 className="text-[18px] leading-[26px] font-bold text-ink break-keep">
+                              {title}
+                            </h2>
+                            {subtitle && (
+                              <p className="text-[14px] leading-[22px] font-medium text-ink-muted break-keep">
+                                {subtitle}
+                              </p>
+                            )}
                           </div>
-                        ))
-                      ) : (
+                          <span className="text-[12px] font-semibold text-pass whitespace-nowrap shrink-0 ml-2">
+                            {bodyParagraphs.length}문단 · {bodyCharCount.toLocaleString()}자
+                          </span>
+                        </div>
+
+                        <div className="space-y-4 text-[15.5px] leading-[28px] text-ink select-text">
+                          {bodyParagraphs.map((para, idx) => (
+                            <p key={idx} className="break-keep">
+                              {para}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 우측 5컬럼: 바로 복사 가능한 순수 텍스트 박스 (통문장 편집 겸용) */}
+                      <div className="lg:col-span-5 rounded-lg border-hairline border-line bg-surface-subtle p-4 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[12px] font-bold text-ink">
+                            📋 순수 텍스트 원고 (클릭해 전체 선택·복사 및 직접 수정)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleQuickCopyRewritten("body")}
+                            className="rounded bg-primary px-2.5 py-1 text-[11px] font-bold text-surface hover:opacity-90"
+                          >
+                            텍스트 복사
+                          </button>
+                        </div>
                         <textarea
-                          rows={20}
+                          rows={18}
                           value={body}
                           onChange={(e) => setBody(e.target.value)}
-                          className="w-full rounded-md border-hairline border-line p-3 text-[14px] leading-[25px]"
+                          onFocus={(e) => e.target.select()}
+                          className="w-full rounded-md border-hairline border-line bg-surface p-3 text-[14px] leading-[24px] text-ink font-sans"
                         />
-                      )}
+                        <p className="text-[11px] text-ink-muted">
+                          💡 입력창을 클릭하면 리라이팅된 본문 전체가 자동 선택되며, 수정 시 우측 화면에도 즉시 반영됩니다.
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  /* 좌우 2분할 메인 그리드 */
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                    {/* 왼쪽 화면: 원문에 교정 표시 (빨간색 표시 / 초록색 교체) */}
+                    <div className="rounded-lg border-hairline border-line bg-surface-subtle overflow-hidden flex flex-col">
+                      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 border-b-hairline border-line bg-surface">
+                        <div className="flex items-center gap-2">
+                          <span className="inline-flex h-[22px] items-center rounded bg-ink px-2 text-[11px] font-bold text-surface whitespace-nowrap">
+                            왼쪽 화면 · 원문에 교정 표시
+                          </span>
+                          <span className="text-[11px] text-ink-muted break-keep">
+                            <strong className="text-reject">빨간색 표시</strong> 클릭 → 수정 문장 선택 시 <strong className="text-pass">초록색 교체</strong>
+                          </span>
+                        </div>
+                        <span className="text-[11px] font-semibold text-ink-muted whitespace-nowrap">
+                          원문 {rawParagraphs.length}단락
+                        </span>
+                      </div>
+                      <div className="p-3.5 max-h-[780px] overflow-y-auto">
+                        {renderOriginalWithHighlightsStudio()}
+                      </div>
+                    </div>
+
+                    {/* 오른쪽 화면: 수정 완료된 원문 글 바로 보여주기 (수정된 내용만 깔끔하게 표시) */}
+                    <div className="rounded-lg border-hairline border-primary bg-surface overflow-hidden flex flex-col">
+                      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 border-b-hairline border-line bg-primary-subtle/50">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex h-[22px] items-center rounded bg-primary px-2 text-[11px] font-bold text-surface whitespace-nowrap">
+                            오른쪽 화면 · 수정 완료된 기사 전문
+                          </span>
+                          <div className="inline-flex items-center rounded border-hairline border-line bg-surface p-0.5">
+                            <button
+                              type="button"
+                              onClick={() => setRightPaneCleanText(false)}
+                              className={`h-[20px] rounded px-2 text-[10px] font-bold whitespace-nowrap ${
+                                !rightPaneCleanText
+                                  ? "bg-primary text-surface"
+                                  : "text-ink-muted hover:text-ink"
+                              }`}
+                            >
+                              ✨ 하이라이트 보기
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setRightPaneCleanText(true)}
+                              className={`h-[20px] rounded px-2 text-[10px] font-bold whitespace-nowrap ${
+                                rightPaneCleanText
+                                  ? "bg-primary text-surface"
+                                  : "text-primary hover:bg-primary-subtle"
+                              }`}
+                            >
+                              📄 전체 글만 보기
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleQuickCopyRewritten("body")}
+                            className="inline-flex h-[22px] items-center whitespace-nowrap rounded bg-pass px-2 text-[11px] font-bold text-surface hover:opacity-90"
+                          >
+                            📋 본문 바로 복사
+                          </button>
+                          <span
+                            className={`text-[11px] font-semibold whitespace-nowrap ${
+                              isBodyInRange ? "text-pass" : "text-hold"
+                            }`}
+                          >
+                            {bodyCharCount.toLocaleString()}자
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="p-3.5 max-h-[780px] overflow-y-auto space-y-3">
+                        {rightPaneCleanText ? (
+                          <div className="rounded-md border-hairline border-line bg-surface p-4 space-y-3.5">
+                            <div className="flex items-center justify-between border-b-hairline border-line pb-2">
+                              <span className="text-[11px] font-bold text-primary">
+                                📄 전체 리라이팅·수정 완료 원고 (순수 텍스트)
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleQuickCopyRewritten("body")}
+                                className="rounded border-hairline border-primary bg-primary-subtle px-2 py-0.5 text-[11px] font-bold text-primary hover:opacity-90"
+                              >
+                                📋 전체 텍스트 복사
+                              </button>
+                            </div>
+                            <div className="space-y-3.5 text-[15px] leading-[27px] text-ink select-text">
+                              {bodyParagraphs.map((para, idx) => (
+                                <p key={idx} className="break-keep">
+                                  {para}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        ) : paragraphMode ? (
+                          bodyParagraphs.map((para, idx) => (
+                            <div
+                              id={`body-para-${idx}`}
+                              key={idx}
+                              className="rounded-md border-hairline border-line bg-surface-subtle/50 p-3 space-y-2"
+                            >
+                              <div className="flex items-center justify-between border-b-hairline border-line pb-1 text-[11px]">
+                                <span className="font-semibold text-primary whitespace-nowrap">
+                                  수정 단락 {String(idx + 1).padStart(2, "0")} ({Array.from(para).length}자)
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    disabled={idx === 0}
+                                    onClick={() => moveParagraph(idx, -1)}
+                                    className="whitespace-nowrap rounded border-hairline border-line bg-surface px-1.5 py-0.5 text-[10px] disabled:opacity-40"
+                                  >
+                                    ↑ 위로
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={idx === bodyParagraphs.length - 1}
+                                    onClick={() => moveParagraph(idx, 1)}
+                                    className="whitespace-nowrap rounded border-hairline border-line bg-surface px-1.5 py-0.5 text-[10px] disabled:opacity-40"
+                                  >
+                                    ↓ 아래로
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="rounded border-hairline border-line bg-surface p-3">
+                                {effectiveMode === "minimal"
+                                  ? renderMinimalParagraphStudio(para, idx)
+                                  : renderRewriteYellowHighlightsStudio(para, idx)}
+                              </div>
+
+                              <details className="group">
+                                <summary className="cursor-pointer text-[11px] font-medium text-ink-muted hover:text-primary select-none">
+                                  ✎ 단락 {String(idx + 1).padStart(2, "0")} 직접 타이핑 편집 열기
+                                </summary>
+                                <textarea
+                                  rows={3}
+                                  value={para}
+                                  onChange={(e) => updateParagraph(idx, e.target.value)}
+                                  className="mt-1.5 w-full rounded border-hairline border-line bg-surface p-2 text-[13px] leading-[21px]"
+                                />
+                              </details>
+                            </div>
+                          ))
+                        ) : (
+                          <textarea
+                            rows={20}
+                            value={body}
+                            onChange={(e) => setBody(e.target.value)}
+                            className="w-full rounded-md border-hairline border-line p-3 text-[14px] leading-[25px]"
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 캡션 & 바이라인 */}

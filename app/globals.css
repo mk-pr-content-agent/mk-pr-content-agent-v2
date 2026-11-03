@@ -5,6 +5,8 @@
 @layer base {
   body {
     @apply bg-surface-subtle text-ink font-sans text-[14px] leading-[22px] antialiased;
+    word-break: keep-all;
+    overflow-wrap: break-word;
   }
 }
 

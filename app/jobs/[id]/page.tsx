@@ -198,6 +198,8 @@ export default function JobWorkspacePage() {
   const [rightTab, setRightTab] = React.useState<"rules" | "claims" | "sources" | "raw">(
     "rules"
   );
+  const [leftTab, setLeftTab] = React.useState<"facts" | "stages">("facts");
+  const [expandOriginalBox, setExpandOriginalBox] = React.useState(true);
 
   // 편집기 상태
   const [title, setTitle] = React.useState("");
@@ -1554,8 +1556,9 @@ export default function JobWorkspacePage() {
 
     return (
       <div
+        id={`sug-card-${matchedSug.id}`}
         key={keyPrefix}
-        className="my-2 rounded-lg border-hairline border-line bg-surface p-3.5 space-y-2.5"
+        className="my-2.5 rounded-lg border-hairline border-line bg-surface p-3.5 space-y-2.5"
       >
         <div
           role="button"
@@ -1567,48 +1570,65 @@ export default function JobWorkspacePage() {
               toggleOpen();
             }
           }}
-          className="grid grid-cols-[42px_1fr] items-baseline gap-x-3 gap-y-2 cursor-pointer group"
+          className="space-y-2 cursor-pointer group"
           title="클릭하면 다양한 버전의 대체 문장 토글이 열립니다"
         >
-          {/* 원본 행 (취소선) */}
-          <span className="text-[12px] leading-[22px] font-semibold text-ink-muted select-none">
-            원본
-          </span>
-          <div className="text-[15px] leading-[26px] text-[#334155]">
-            <span
-              className={`line-through decoration-2 ${
-                isReplaced
-                  ? "decoration-ink-muted/70 text-ink-muted"
-                  : "decoration-reject text-ink"
-              }`}
-            >
-              {matchedSug.originalSentence}
-            </span>
+          {/* 상단: 원본 문장 (전체 폭 · 취소선) */}
+          <div className="rounded-md border-hairline border-line bg-surface-subtle/70 px-3.5 py-2.5 space-y-1">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="inline-flex items-center rounded bg-reject-bg px-2 py-0.5 text-[11px] font-bold text-reject whitespace-nowrap shrink-0">
+                원본 문장
+              </span>
+              <span className="text-[11px] font-medium text-ink-muted break-keep">
+                {matchedSug.ruleBadge} · {matchedSug.reason}
+              </span>
+            </div>
+            <div className="text-[15px] leading-[26px] text-[#334155] break-keep">
+              <span
+                className={`line-through decoration-2 ${
+                  isReplaced
+                    ? "decoration-ink-muted/70 text-ink-muted"
+                    : "decoration-reject text-ink"
+                }`}
+              >
+                {matchedSug.originalSentence}
+              </span>
+            </div>
           </div>
 
-          {/* 검토 행 (원본 바로 아래 수정 문장 박스 · 선택 완료 시 초록색으로 변경) */}
-          <span className="text-[12px] leading-[22px] font-semibold text-ink-muted select-none">
-            검토
-          </span>
+          {/* 하단: 수정 제안 / 교정 완료 문장 (원본 바로 아래 100% 전체 폭 · 선택 완료 시 초록색으로 변경) */}
           <div
-            className={`rounded-md px-3.5 py-2.5 text-[15px] leading-[26px] transition-colors flex flex-wrap items-center justify-between gap-2 ${
+            className={`rounded-md px-3.5 py-3 text-[15px] leading-[26px] transition-colors space-y-1.5 ${
               isReplaced
                 ? "bg-pass-bg border-hairline border-pass text-pass font-semibold"
                 : "bg-[#FDEBD0] border-hairline border-[#F5CBA7] text-[#9A3412] font-medium group-hover:bg-[#FAD7A0]/70"
             }`}
           >
-            <span className="flex-1">{previewAlt.text}</span>
-            <span
-              className={`shrink-0 inline-flex items-center rounded px-2 py-0.5 text-[11px] leading-[16px] font-semibold ${
-                isReplaced
-                  ? "bg-pass text-surface"
-                  : "bg-[#9A3412]/15 text-[#9A3412]"
-              }`}
-            >
-              {isReplaced
-                ? `✓ 초록색 교체됨 (${selectedAlt?.toneBadge ?? "선택 버전"}) ▾`
-                : `다른 표현 버전 선택 (${matchedSug.alternatives.length}종) ▾`}
-            </span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span
+                className={`inline-flex items-center rounded px-2 py-0.5 text-[11px] leading-[16px] font-bold whitespace-nowrap shrink-0 ${
+                  isReplaced
+                    ? "bg-pass text-surface"
+                    : "bg-[#9A3412] text-surface"
+                }`}
+              >
+                {isReplaced ? "✓ 수정 완료 (초록색 교체됨)" : "✎ 아래 수정 제안"}
+              </span>
+              <span
+                className={`shrink-0 whitespace-nowrap inline-flex items-center rounded px-2.5 py-0.5 text-[11px] leading-[16px] font-semibold ${
+                  isReplaced
+                    ? "bg-surface/80 text-pass border-hairline border-pass"
+                    : "bg-surface/90 text-[#9A3412] border-hairline border-[#F5CBA7]"
+                }`}
+              >
+                {isReplaced
+                  ? `선택됨: ${selectedAlt?.toneBadge ?? "선택 버전"} (다시 선택 ▾)`
+                  : `클릭해 다른 표현 버전 선택 (${matchedSug.alternatives.length}종) ▾`}
+              </span>
+            </div>
+            <div className="text-[15px] leading-[26px] break-keep">
+              {previewAlt.text}
+            </div>
           </div>
         </div>
 
@@ -1727,6 +1747,74 @@ export default function JobWorkspacePage() {
             </div>
           </div>
         )}
+      </div>
+    );
+  }
+
+  function renderOriginalFullWithRedlines() {
+    return (
+      <div className="space-y-3 text-[14px] leading-[25px] text-ink break-keep">
+        {rawParagraphs.map((rawPara, rIdx) => {
+          const sentences = rawPara
+            .split(/(?<=[.!?다요])\s+/)
+            .map((s) => s.trim())
+            .filter((s) => s.length > 0);
+          return (
+            <div
+              key={rIdx}
+              className="rounded-md border-hairline border-line bg-surface p-3 space-y-1"
+            >
+              <div className="flex items-center justify-between text-[11px] text-ink-muted">
+                <span className="font-semibold text-ink">
+                  원문 단락 {String(rIdx + 1).padStart(2, "0")}
+                </span>
+                <span>{Array.from(rawPara).length}자</span>
+              </div>
+              <div className="leading-[26px]">
+                {sentences.map((sent, sIdx) => {
+                  const matchedSug = sentenceSuggestions.find(
+                    (sug) =>
+                      sent === sug.originalSentence ||
+                      sent.includes(sug.originalSentence) ||
+                      sug.originalSentence.includes(sent)
+                  );
+                  if (matchedSug && effectiveMode === "minimal") {
+                    const isReplaced = Boolean(matchedSug.selectedAlternativeId);
+                    return (
+                      <button
+                        key={sIdx}
+                        type="button"
+                        onClick={() => {
+                          setActiveSuggestionId(matchedSug.id);
+                          const el = document.getElementById(
+                            `sug-card-${matchedSug.id}`
+                          );
+                          el?.scrollIntoView({
+                            behavior: "smooth",
+                            block: "center",
+                          });
+                        }}
+                        className={`inline text-left rounded px-1 py-0.5 mr-1.5 transition-colors ${
+                          isReplaced
+                            ? "bg-pass-bg text-pass font-semibold border-b-2 border-pass"
+                            : "bg-reject-bg text-reject line-through decoration-reject decoration-2 font-medium hover:bg-reject-bg/80"
+                        }`}
+                        title="클릭하면 아래 수정된 내용 영역의 해당 문장 교정 카드로 이동합니다"
+                      >
+                        {sent}
+                      </button>
+                    );
+                  }
+                  return (
+                    <span key={sIdx} className="mr-1.5">
+                      {sent}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -2037,97 +2125,269 @@ export default function JobWorkspacePage() {
         </div>
       )}
 
-      {/* 3단 메인 워크스페이스 (DESIGN.md 5절 레이아웃: 240px / flex / 360px · 넓게 보기 시 전체 폭 확장) */}
-      <main className="mx-auto flex w-full max-w-[1600px] flex-1 gap-4 p-4">
-        {/* 좌측: 진행 타임라인 (240px) */}
+      {/* 3단 메인 워크스페이스 (좌측 사이드: 취재 팩트 메모장·단계 타임라인 / 중앙: 원문 전체→아래 수정본 편집기 / 우측: 규정·우측 하단 AI 채팅) */}
+      <main className="mx-auto flex w-full max-w-[1680px] flex-1 gap-4 p-4">
+        {/* 1) 왼쪽 사이드바 (350px): 📌 취재 팩트 메모장 (기본 활성) + 단계 진행 타임라인 탭 */}
         {!wideEditorMode && (
-          <aside className="w-[240px] shrink-0">
+          <aside id="left-fact-sidebar" className="w-[350px] shrink-0 flex flex-col gap-3">
             <Card className="p-0 overflow-hidden">
-              <div className="bg-surface-subtle px-4 py-3 border-b-hairline border-line space-y-0.5">
-                <h2 className="text-[14px] leading-[22px] font-semibold text-ink">
-                  단계 진행 타임라인
-                </h2>
-                <p className="text-[11px] leading-[16px] text-ink-muted">
-                  단계를 클릭하면 상세 실행 결과를 확인합니다
-                </p>
+              <div className="grid grid-cols-2 border-b-hairline border-line bg-surface-subtle p-1 gap-1">
+                <button
+                  type="button"
+                  onClick={() => setLeftTab("facts")}
+                  className={`whitespace-nowrap rounded-md py-2 px-2 text-[12px] font-bold transition-colors ${
+                    leftTab === "facts"
+                      ? "bg-surface text-ink border-hairline border-line"
+                      : "text-ink-muted hover:text-ink"
+                  }`}
+                >
+                  📌 취재 팩트 메모장 ({factMemos.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLeftTab("stages")}
+                  className={`whitespace-nowrap rounded-md py-2 px-2 text-[12px] font-bold transition-colors ${
+                    leftTab === "stages"
+                      ? "bg-surface text-primary border-hairline border-line"
+                      : "text-ink-muted hover:text-ink"
+                  }`}
+                >
+                  ⚡ 단계 진행 (S0~S10)
+                </button>
               </div>
-              <div className="divide-y-hairline divide-line">
-                {ALL_STAGES.map((st) => {
-                  const state = stageStates[st.id]?.status ?? "pending";
-                  const summary = stageStates[st.id]?.summary ?? "";
-                  const isSelected = selectedStage === st.id;
-                  const isHoldOrCaution =
-                    summary.includes("HOLD") ||
-                    summary.includes("차별화 적용") ||
-                    summary.includes("증빙 확인 필요");
-                  return (
+
+              {leftTab === "facts" ? (
+                <div className="p-4 space-y-3 flex flex-col max-h-[calc(100vh-145px)] overflow-y-auto">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-[15px] leading-[22px] font-bold text-ink flex items-center gap-1.5 whitespace-nowrap">
+                        <span>📌</span>
+                        <span>취재 팩트 메모장 ({factMemos.length}건)</span>
+                      </h3>
+                    </div>
                     <button
-                      key={st.id}
                       type="button"
-                      onClick={() =>
-                        setSelectedStage((prev) =>
-                          prev === st.id ? null : st.id
-                        )
-                      }
-                      className={`w-full text-left px-3.5 py-2.5 space-y-1 transition-colors duration-150 ${
-                        isSelected
-                          ? "bg-primary-subtle"
-                          : "hover:bg-surface-subtle"
-                      }`}
+                      onClick={handleLoadMoreCompanyFacts}
+                      className="inline-flex items-center gap-1 text-[12px] leading-[18px] font-semibold text-hold hover:underline break-keep text-left"
                     >
-                      <div className="flex items-center justify-between gap-2 text-[12px] leading-[18px]">
-                        <span
-                          className={
-                            isSelected
-                              ? "font-semibold text-primary"
-                              : state === "completed"
-                              ? "font-medium text-ink"
-                              : state === "running"
-                              ? "font-semibold text-primary"
-                              : "text-ink-muted"
-                          }
+                      <span>📰</span>
+                      <span>최신 뉴스·기업정보·매출액 문장 더 불러오기</span>
+                    </button>
+                    <p className="text-[12px] leading-[18px] text-ink-muted break-keep">
+                      오른쪽 작성 중인 기사는 그대로 유지하면서, 보도자료 기업의{" "}
+                      <strong className="font-semibold text-ink">
+                        기업정보·매출액·자체 취재 팩트
+                      </strong>
+                      를 매경 기사체로 다듬어 원하는 단락에 끼워 넣는 왼쪽 사이드 메모장입니다.
+                    </p>
+                  </div>
+
+                  {/* 자체 취재 내용(기업정보, 매출액 등) 직접 입력 및 추가 박스 */}
+                  <div className="rounded-md border-hairline border-line bg-surface-subtle p-3 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-semibold text-ink-muted whitespace-nowrap">
+                        팩트 분류:
+                      </span>
+                      <select
+                        value={newFactCategory}
+                        onChange={(e) => setNewFactCategory(e.target.value)}
+                        className="h-[26px] rounded border-hairline border-line bg-surface px-2 text-[11px] font-medium text-ink"
+                      >
+                        <option value="기업 기본 정보">기업 기본 정보</option>
+                        <option value="매출액·실적 정보">매출액·실적 정보</option>
+                        <option value="브랜드·출시 핵심 팩트">브랜드·출시 핵심 팩트</option>
+                        <option value="제품·기술 핵심 특징">제품·기술 핵심 특징</option>
+                        <option value="유통·시장 판매 동향">유통·시장 판매 동향</option>
+                      </select>
+                    </div>
+                    <textarea
+                      rows={3}
+                      value={newFactInput}
+                      onChange={(e) => setNewFactInput(e.target.value)}
+                      placeholder="기업 정보, 매출액 등 팩트나 보도자료 문장을 붙여넣으세요..."
+                      className="w-full resize-y rounded-md border-hairline border-line bg-surface p-2.5 text-[13px] leading-[20px] text-ink focus-visible:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                    />
+                    <div className="flex items-center gap-1.5">
+                      <Input
+                        value={newFactUrl}
+                        onChange={(e) => setNewFactUrl(e.target.value)}
+                        placeholder="출처 URL (선택)"
+                        className="h-[34px] text-[12px] flex-1 min-w-0 bg-surface"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddFactMemo}
+                        disabled={!newFactInput.trim()}
+                        className="h-[34px] shrink-0 whitespace-nowrap rounded-md bg-hold px-3 text-[12px] font-bold text-surface hover:opacity-90 disabled:opacity-50"
+                      >
+                        + 매경 문체로 추가
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 메모 리스트 */}
+                  <div className="divide-y-hairline divide-line space-y-3 pt-1">
+                    {factMemos.map((memo) => {
+                      const selectedParaIdx =
+                        memoTargetParas[memo.id] ??
+                        Math.min(
+                          memo.targetParaIdx ?? 1,
+                          Math.max(0, bodyParagraphs.length - 1)
+                        );
+                      const isInserted =
+                        memo.insertedInParaIdx !== null &&
+                        memo.insertedInParaIdx !== undefined;
+                      return (
+                        <div
+                          key={memo.id}
+                          className="pt-3 first:pt-0 space-y-2 text-[13px] leading-[20px]"
                         >
-                          {st.label}
-                        </span>
-                        <span className="shrink-0">
-                          {state === "completed" &&
-                            (isHoldOrCaution ? (
-                              <span
-                                title="주의·자동 차별화 또는 증빙 확인 항목이 있어 반영되었습니다 (클릭하여 상세 보기)"
-                                className="inline-flex items-center gap-0.5 rounded bg-hold-bg px-1.5 py-0.5 text-[10px] font-semibold text-hold"
-                              >
-                                <AlertTriangle className="h-3 w-3 stroke-[1.75]" />
-                                <span>주의</span>
-                              </span>
-                            ) : (
-                              <CheckCircle2 className="h-3.5 w-3.5 text-pass stroke-[1.5]" />
-                            ))}
-                          {state === "running" && (
-                            <span className="text-[12px] font-semibold text-primary">
-                              ...
+                          <p className="text-ink font-medium leading-[21px] break-keep">
+                            {memo.text}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="inline-flex items-center rounded bg-hold-bg px-2 py-0.5 text-[11px] font-semibold text-hold whitespace-nowrap">
+                              {memo.category}
                             </span>
-                          )}
-                          {state === "skipped" && (
-                            <span className="text-[11px] text-ink-muted">생략</span>
-                          )}
-                          {state === "failed" && (
-                            <XCircle className="h-3.5 w-3.5 text-reject stroke-[1.5]" />
-                          )}
-                        </span>
-                      </div>
-                      {summary && (
-                        <p
-                          className={`text-[11px] leading-[16px] truncate ${
-                            isHoldOrCaution ? "text-hold font-medium" : "text-ink-muted"
+                            {memo.sourceUrl && (
+                              <a
+                                href={memo.sourceUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-0.5 text-[11px] text-ink-muted underline hover:text-ink whitespace-nowrap"
+                              >
+                                <span>{memo.sourceTitle || "출처 원문"} ↗</span>
+                              </a>
+                            )}
+                            {isInserted && (
+                              <span className="inline-flex items-center rounded bg-pass-bg px-1.5 py-0.5 text-[11px] font-semibold text-pass whitespace-nowrap">
+                                ✓ 단락 {String((memo.insertedInParaIdx ?? 0) + 1).padStart(2, "0")} 반영됨
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                            <select
+                              value={selectedParaIdx}
+                              onChange={(e) =>
+                                setMemoTargetParas((prev) => ({
+                                  ...prev,
+                                  [memo.id]: Number(e.target.value),
+                                }))
+                              }
+                              className="h-[28px] rounded border-hairline border-line bg-surface px-2 text-[12px] text-ink"
+                            >
+                              {bodyParagraphs.map((_, pIdx) => (
+                                <option key={pIdx} value={pIdx}>
+                                  단락 {String(pIdx + 1).padStart(2, "0")}에 넣기
+                                </option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={() => handleInsertFactMemoToParagraph(memo)}
+                              className="inline-flex items-center gap-1 text-[12px] font-semibold text-hold hover:underline whitespace-nowrap shrink-0"
+                            >
+                              <span>{isInserted ? "반영 취소 ↺" : "본문 반영 →"}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteFactMemo(memo.id)}
+                              className="text-[12px] text-ink-muted hover:text-reject whitespace-nowrap shrink-0"
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <div className="bg-surface-subtle px-4 py-2.5 border-b-hairline border-line space-y-0.5">
+                    <p className="text-[11px] leading-[16px] text-ink-muted">
+                      단계를 클릭하면 상세 실행 결과를 확인합니다
+                    </p>
+                  </div>
+                  <div className="divide-y-hairline divide-line">
+                    {ALL_STAGES.map((st) => {
+                      const state = stageStates[st.id]?.status ?? "pending";
+                      const summary = stageStates[st.id]?.summary ?? "";
+                      const isSelected = selectedStage === st.id;
+                      const isHoldOrCaution =
+                        summary.includes("HOLD") ||
+                        summary.includes("차별화 적용") ||
+                        summary.includes("증빙 확인 필요");
+                      return (
+                        <button
+                          key={st.id}
+                          type="button"
+                          onClick={() =>
+                            setSelectedStage((prev) =>
+                              prev === st.id ? null : st.id
+                            )
+                          }
+                          className={`w-full text-left px-3.5 py-2.5 space-y-1 transition-colors duration-150 ${
+                            isSelected
+                              ? "bg-primary-subtle"
+                              : "hover:bg-surface-subtle"
                           }`}
                         >
-                          {summary}
-                        </p>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
+                          <div className="flex items-center justify-between gap-2 text-[12px] leading-[18px]">
+                            <span
+                              className={
+                                isSelected
+                                  ? "font-semibold text-primary"
+                                  : state === "completed"
+                                  ? "font-medium text-ink"
+                                  : state === "running"
+                                  ? "font-semibold text-primary"
+                                  : "text-ink-muted"
+                              }
+                            >
+                              {st.label}
+                            </span>
+                            <span className="shrink-0">
+                              {state === "completed" &&
+                                (isHoldOrCaution ? (
+                                  <span
+                                    title="주의·자동 차별화 또는 증빙 확인 항목이 있어 반영되었습니다 (클릭하여 상세 보기)"
+                                    className="inline-flex items-center gap-0.5 rounded bg-hold-bg px-1.5 py-0.5 text-[10px] font-semibold text-hold whitespace-nowrap"
+                                  >
+                                    <AlertTriangle className="h-3 w-3 stroke-[1.75]" />
+                                    <span>주의</span>
+                                  </span>
+                                ) : (
+                                  <CheckCircle2 className="h-3.5 w-3.5 text-pass stroke-[1.5]" />
+                                ))}
+                              {state === "running" && (
+                                <span className="text-[12px] font-semibold text-primary">
+                                  ...
+                                </span>
+                              )}
+                              {state === "skipped" && (
+                                <span className="text-[11px] text-ink-muted">생략</span>
+                              )}
+                              {state === "failed" && (
+                                <XCircle className="h-3.5 w-3.5 text-reject stroke-[1.5]" />
+                              )}
+                            </span>
+                          </div>
+                          {summary && (
+                            <p
+                              className={`text-[11px] leading-[16px] truncate ${
+                                isHoldOrCaution ? "text-hold font-medium" : "text-ink-muted"
+                              }`}
+                            >
+                              {summary}
+                            </p>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </Card>
           </aside>
         )}
@@ -2285,187 +2545,59 @@ export default function JobWorkspacePage() {
               </div>
             ) : (
               <div className="divide-y-hairline divide-line flex-1 flex flex-col">
-                {/* 원문 대비 AI 편집·변경 요약 박스 (본문 위치 연결 및 사이즈 자유 조절 지원) */}
-                <div
-                  className={`px-4 py-3 bg-info-bg border-b-hairline border-info space-y-2.5 resize-y overflow-auto ${
-                    expandDiffBox ? "min-h-[260px]" : "min-h-[135px]"
-                  }`}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-1.5 text-[13px] leading-[20px] font-semibold text-info">
-                      <Info className="h-4 w-4 shrink-0 stroke-[1.5]" />
-                      <span>
-                        보도자료 원문 대비 AI 편집·교열 내역 (총{" "}
-                        {(s5Output?.diffs?.length ?? 0) + 2}건 반영 · 항목 클릭 시 본문 위치로 이동)
+                {/* 1. 상단: 기사 제목 & 추천 제목 후보 & 부제목 (불필요한 상단 박스 제거로 한눈에 들어오도록 구성) */}
+                <div className="p-4 space-y-3 bg-surface">
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="articleTitle">
+                        제목 (목표 40자 내외, 28~45자 통과)
+                      </Label>
+                      <span
+                        className={`text-[12px] leading-[18px] font-medium whitespace-nowrap ${
+                          isTitleInRange ? "text-ink-muted" : "text-hold"
+                        }`}
+                      >
+                        {titleCharCount}자 (기준 28~45자)
                       </span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setExpandDiffBox((v) => !v)}
-                        className="h-[26px] px-2.5 text-[12px] gap-1 whitespace-nowrap"
-                      >
-                        {expandDiffBox ? (
-                          <>
-                            <Minimize2 className="h-3 w-3 stroke-[1.5]" />
-                            <span>교열 영역 기본 크기</span>
-                          </>
-                        ) : (
-                          <>
-                            <Maximize2 className="h-3 w-3 stroke-[1.5]" />
-                            <span>교열 영역 크게 보기</span>
-                          </>
-                        )}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setShowSideBySide((v) => !v)}
-                        className="h-[26px] px-2.5 text-[12px] whitespace-nowrap"
-                      >
-                        {showSideBySide
-                          ? "단일 편집기로 보기"
-                          : "원문과 나란히 비교 보기"}
-                      </Button>
-                    </div>
+                    <Input
+                      id="articleTitle"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="h-[42px] text-[19px] leading-[28px] font-bold"
+                    />
+                    {s6Output?.titleCandidates &&
+                      s6Output.titleCandidates.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          <span className="text-[11px] font-semibold text-ink-muted whitespace-nowrap">
+                            추천 제목 후보:
+                          </span>
+                          {s6Output.titleCandidates.map((cand, idx) => (
+                            <button
+                              key={idx}
+                              type="button"
+                              onClick={() => setTitle(cand)}
+                              className="text-left rounded border-hairline border-line bg-surface-subtle px-2 py-0.5 text-[11px] leading-[16px] text-primary hover:border-primary hover:bg-primary-subtle transition-colors"
+                            >
+                              후보 {idx + 1}: {cand}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                   </div>
 
-                  <ul
-                    className={`space-y-1.5 ${
-                      expandDiffBox
-                        ? "text-[13px] leading-[22px]"
-                        : "text-[12px] leading-[18px]"
-                    } text-ink`}
-                  >
-                    <li>
-                      • <strong className="font-semibold">제목·부제 신설:</strong>{" "}
-                      원문에 없던 매경 스타일 40자 내외 제목 후보 3종 및 명사형 부제 2줄 생성
-                    </li>
-                    <li>
-                      • <strong className="font-semibold">리드문 기사체 정비 및 문단 순서 재배치:</strong>{" "}
-                      첫 문단(리드)은 고정하되 포털 중복·유사 판정 회피를 위해 중간 문단(2문단 ↔ 3문단) 순서를 교차 배치했으며, 아래 문단별 블록에서 <strong className="font-semibold">[위로 / 아래로]</strong> 버튼으로 자유롭게 위치를 조정할 수 있습니다.
-                    </li>
-                    {s5Output?.diffs && s5Output.diffs.length > 0 ? (
-                      s5Output.diffs.map((d, idx) => {
-                        const matchedParaIndices: number[] = [];
-                        let isRestoredInBody = false;
-                        bodyParagraphs.forEach((p, pIdx) => {
-                          if (
-                            d.replacement !== "(삭제)" &&
-                            d.replacement &&
-                            p.includes(d.replacement)
-                          ) {
-                            matchedParaIndices.push(pIdx);
-                          } else if (d.original && p.includes(d.original)) {
-                            matchedParaIndices.push(pIdx);
-                            isRestoredInBody = true;
-                          }
-                        });
-
-                        return (
-                          <li
-                            key={idx}
-                            className={`flex flex-wrap items-center justify-between gap-2 rounded bg-surface border-hairline border-line ${
-                              expandDiffBox ? "px-3 py-2" : "px-2.5 py-1.5"
-                            }`}
-                          >
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-semibold text-primary">
-                                [교열 {idx + 1}]
-                              </span>
-                              <span className="rounded bg-reject-bg px-1.5 py-0.5 text-reject line-through">
-                                {d.original}
-                              </span>
-                              <span className="text-ink-muted">→</span>
-                              <span className="rounded bg-pass-bg px-1.5 py-0.5 text-pass font-semibold">
-                                {d.replacement}
-                              </span>
-                              <span className="text-ink-muted">({d.reason})</span>
-
-                              {/* 본문 내 어느 문단에 위치해 있는지 표시 및 클릭 시 해당 문단으로 스크롤 */}
-                              {matchedParaIndices.length > 0 ? (
-                                matchedParaIndices.map((pIdx) => (
-                                  <button
-                                    key={pIdx}
-                                    type="button"
-                                    onClick={() => scrollToParagraph(pIdx)}
-                                    className="inline-flex items-center gap-1 rounded border-hairline border-primary bg-primary-subtle px-2 py-0.5 text-[11px] font-semibold text-primary hover:bg-primary hover:text-surface transition-colors"
-                                  >
-                                    <MapPin className="h-3 w-3 stroke-[1.75]" />
-                                    <span>
-                                      본문 {pIdx + 1}문단 위치 보기
-                                      {isRestoredInBody ? " (원문 복원됨)" : ""}
-                                    </span>
-                                  </button>
-                                ))
-                              ) : (
-                                <span className="inline-flex items-center rounded bg-surface-subtle px-1.5 py-0.5 text-[11px] text-ink-muted">
-                                  본문 내 삭제·편집됨
-                                </span>
-                              )}
-                            </div>
-
-                            <div className="flex items-center gap-1 shrink-0">
-                              {matchedParaIndices.length > 0 && (
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() =>
-                                    scrollToParagraph(matchedParaIndices[0]!)
-                                  }
-                                  className="h-[22px] px-2 text-[11px] gap-1 whitespace-nowrap"
-                                >
-                                  <MapPin className="h-3 w-3 stroke-[1.5]" />
-                                  <span>
-                                    {matchedParaIndices[0]! + 1}문단 이동
-                                  </span>
-                                </Button>
-                              )}
-                              {d.replacement !== "(삭제)" && (
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() =>
-                                    setBody((prev) =>
-                                      isRestoredInBody
-                                        ? prev.replace(d.original, d.replacement)
-                                        : prev.replace(d.replacement, d.original)
-                                    )
-                                  }
-                                  className="h-[22px] px-2 text-[11px] gap-1 shrink-0 whitespace-nowrap"
-                                >
-                                  <RotateCcw className="h-3 w-3 stroke-[1.5]" />
-                                  <span>
-                                    {isRestoredInBody
-                                      ? "교열어 재적용"
-                                      : "원문 복원"}
-                                  </span>
-                                </Button>
-                              )}
-                            </div>
-                          </li>
-                        );
-                      })
-                    ) : (
-                      <li>
-                        • <strong className="font-semibold">과장·판촉 표현 점검:</strong>{" "}
-                        원문 내 금지 최상급·URL이 없으며, 원문 팩트를 그대로 유지함
-                      </li>
-                    )}
-                  </ul>
-
-                  <div className="flex items-center justify-between pt-0.5 text-[11px] text-ink-muted">
-                    <span>
-                      💡 각 <strong className="font-semibold text-primary">[본문 N문단 위치 보기]</strong>를 누르면 해당 문단으로 이동하며, 문단 내부에 교열 전·후 위치가 초록색 배지로 표시됩니다.
-                    </span>
-                    <span className="shrink-0">
-                      ↕ 우측 하단 모서리를 드래그해 영역 높이를 자유롭게 조절할 수 있습니다
-                    </span>
+                  {/* 부제목 입력란 */}
+                  <div className="space-y-1">
+                    <Label htmlFor="articleSubtitle">
+                      부제목 (0~3줄, 명사형 종결·마침표 없음)
+                    </Label>
+                    <textarea
+                      id="articleSubtitle"
+                      rows={2}
+                      value={subtitle}
+                      onChange={(e) => setSubtitle(e.target.value)}
+                      className="w-full resize-y rounded-md border-hairline border-line bg-surface px-3 py-2 text-[14px] leading-[22px] text-ink focus-visible:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                    />
                   </div>
                 </div>
 
@@ -2492,15 +2624,12 @@ export default function JobWorkspacePage() {
                                 "비교·기획 문단에 묶여 있는 경쟁사 브랜드들을 문단마다 브랜드별로 각각 독립된 문단으로 분리해서 상세히 작성해줘."
                               )
                             }
-                            className="h-[24px] px-2.5 text-[11px] font-semibold text-secondary border-secondary"
+                            className="h-[24px] px-2.5 text-[11px] font-semibold text-secondary border-secondary whitespace-nowrap"
                           >
                             {chatLoading
                               ? "문단 분리 중..."
                               : "📊 경쟁사 브랜드별로 문단 각각 분리하기"}
                           </Button>
-                          <span className="text-[11px] text-ink-muted">
-                            타 매체 문장 복사 없이 자체 기사 문장으로 재서술됨 (PRD 10.2)
-                          </span>
                         </div>
                       </div>
 
@@ -2531,19 +2660,19 @@ export default function JobWorkspacePage() {
                                     }
                                     className="h-3.5 w-3.5 rounded border-line text-secondary"
                                   />
-                                  <span className="rounded bg-secondary-subtle px-1.5 py-0.5 text-[11px] font-semibold text-secondary">
+                                  <span className="rounded bg-secondary-subtle px-1.5 py-0.5 text-[11px] font-semibold text-secondary whitespace-nowrap">
                                     비교 브랜드 {cIdx + 1}: {comp.name}
                                     {isSelected ? "" : " (제외됨)"}
                                   </span>
                                 </label>
-                                <span className="text-ink">{comp.summary}</span>
+                                <span className="text-ink break-keep">{comp.summary}</span>
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0">
                                 {compParaIdx !== -1 && (
                                   <button
                                     type="button"
                                     onClick={() => scrollToParagraph(compParaIdx)}
-                                    className="inline-flex items-center gap-1 rounded border-hairline border-secondary bg-secondary-subtle px-2 py-0.5 text-[11px] font-semibold text-secondary hover:opacity-80"
+                                    className="inline-flex items-center gap-1 rounded border-hairline border-secondary bg-secondary-subtle px-2 py-0.5 text-[11px] font-semibold text-secondary hover:opacity-80 whitespace-nowrap"
                                   >
                                     <MapPin className="h-3 w-3 stroke-[1.75]" />
                                     <span>본문 {compParaIdx + 1}문단 위치 보기</span>
@@ -2554,7 +2683,7 @@ export default function JobWorkspacePage() {
                                     href={comp.source_url}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="inline-flex items-center gap-1 rounded border-hairline border-line bg-surface-subtle px-2 py-0.5 text-[11px] text-primary hover:underline"
+                                    className="inline-flex items-center gap-1 rounded border-hairline border-line bg-surface-subtle px-2 py-0.5 text-[11px] text-primary hover:underline whitespace-nowrap"
                                   >
                                     <span>근거 출처 확인</span>
                                     <ExternalLink className="h-3 w-3 stroke-[1.5]" />
@@ -2568,256 +2697,14 @@ export default function JobWorkspacePage() {
                     </div>
                   )}
 
-                {/* 💬 AI 대화형 기사 수정 (채팅 입력으로 즉시 문단 분리·문체 교정·분량 조절) */}
-                <div className="px-4 py-3.5 bg-primary-subtle/50 border-b-hairline border-line space-y-2.5">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="inline-flex h-[22px] items-center rounded bg-primary px-2 text-[11px] font-semibold text-surface">
-                        💬 AI 채팅으로 기사 즉시 수정
-                      </span>
-                      <span className="text-[12px] text-ink-muted">
-                        원하는 수정 방향을 채팅으로 입력하면 제목·부제·본문 문단이 페이지 내에서 즉시 개고됩니다 (openai/gpt-5.6-sol)
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 자주 쓰는 원클릭 추천 프롬프트 칩 */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {[
-                      "경쟁사 브랜드별로 문단을 각각 분리해서 작성해줘",
-                      "보도자료 원문과 문단 구성·어순을 더 다르게 재구성해줘",
-                      "본문 분량을 1,350자 내외로 배경 설명을 보강해줘",
-                      "제목과 리드문을 더 정통 경제신문 기사 톤으로 다듬어줘",
-                      "과장·홍보성 수식어를 빼고 건조한 팩트 위주로 다듬어줘",
-                    ].map((preset) => (
-                      <button
-                        key={preset}
-                        type="button"
-                        disabled={chatLoading}
-                        onClick={() => void handleChatEdit(preset)}
-                        className="rounded-md border-hairline border-line bg-surface px-2.5 py-1 text-[11px] leading-[16px] font-medium text-ink hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
-                      >
-                        + {preset}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* 채팅 입력창 + 실행 버튼 */}
-                  <div className="flex items-center gap-2">
-                    <Input
-                      placeholder="예: 경쟁사 브랜드별로 문단을 각각 나누어 작성해줘 / 3문단 내용을 더 간결하게 줄여줘 (Enter 입력)"
-                      value={chatInput}
-                      disabled={chatLoading}
-                      onChange={(e) => setChatInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && !e.shiftKey) {
-                          e.preventDefault();
-                          void handleChatEdit();
-                        }
-                      }}
-                      className="flex-1 bg-surface text-[13px]"
-                    />
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      disabled={chatLoading || !chatInput.trim()}
-                      onClick={() => void handleChatEdit()}
-                      className="h-[36px] px-4 whitespace-nowrap"
-                    >
-                      {chatLoading ? "AI가 기사 수정 중..." : "AI 수정 적용"}
-                    </Button>
-                  </div>
-
-                  {/* 최근 채팅 수정 내역 및 원클릭 되돌리기(Undo) */}
-                  {chatHistory.length > 0 && (
-                    <div className="space-y-1.5 pt-1">
-                      {chatHistory.slice(0, 3).map((item) => (
-                        <div
-                          key={item.id}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-md border-hairline border-pass bg-pass-bg/60 px-3 py-2 text-[12px] leading-[18px]"
-                        >
-                          <div className="space-y-0.5 flex-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-semibold text-ink">
-                                요청 ({item.createdAt}): &quot;{item.instruction}&quot;
-                              </span>
-                            </div>
-                            <p className="text-pass font-medium">
-                              ↳ AI 반영 완료: {item.replySummary}
-                            </p>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={() => void handleUndoChatEdit(item.id)}
-                            className="h-[24px] px-2 text-[11px] gap-1 shrink-0"
-                          >
-                            <RotateCcw className="h-3 w-3 stroke-[1.5]" />
-                            <span>이 수정 전으로 되돌리기</span>
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* 제목 후보 3개 선택 영역 (PRD F8) */}
-                {s6Output?.titleCandidates &&
-                  s6Output.titleCandidates.length > 0 && (
-                    <div className="px-4 py-3 bg-surface-subtle space-y-1.5">
-                      <span className="text-[12px] leading-[18px] font-medium text-ink-muted">
-                        추천 제목 후보 (클릭 시 적용 · 40자 내외):
-                      </span>
-                      <div className="flex flex-col gap-1">
-                        {s6Output.titleCandidates.map((cand, idx) => (
-                          <button
-                            key={idx}
-                            type="button"
-                            onClick={() => setTitle(cand)}
-                            className="text-left text-[12px] leading-[18px] text-primary hover:underline truncate"
-                          >
-                            후보 {idx + 1} ({Array.from(cand).length}자): {cand}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                {/* 제목 입력란 (DESIGN.md: 20px / 30px, 600) */}
-                <div className="p-4 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="articleTitle">
-                      제목 (목표 40자 내외, 28~45자 통과)
-                    </Label>
-                    <span
-                      className={`text-[12px] leading-[18px] font-medium ${
-                        isTitleInRange ? "text-ink-muted" : "text-hold"
-                      }`}
-                    >
-                      {titleCharCount}자 (기준 28~45자)
-                    </span>
-                  </div>
-                  <Input
-                    id="articleTitle"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="h-[42px] text-[20px] leading-[30px] font-semibold"
-                  />
-                </div>
-
-                {/* 부제목 입력란 */}
-                <div className="p-4 space-y-1.5">
-                  <Label htmlFor="articleSubtitle">
-                    부제목 (0~3줄, 명사형 종결·마침표 없음)
-                  </Label>
-                  <textarea
-                    id="articleSubtitle"
-                    rows={2}
-                    value={subtitle}
-                    onChange={(e) => setSubtitle(e.target.value)}
-                    className="w-full resize-y rounded-md border-hairline border-line bg-surface px-3 py-2 text-[14px] leading-[22px] text-ink focus-visible:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                  />
-                </div>
-
-                {/* 본문 편집란 (DESIGN.md: 16px / 28px 행간 1.75 · 3모드 맞춤형 워크스페이스 지원) */}
-                <div className="p-4 space-y-3 flex-1 flex flex-col">
-                  {/* 모드별 핵심 안내 및 전용 컨트롤 바 */}
-                  <div className="rounded-md border-hairline border-line bg-surface-subtle p-3 space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {effectiveMode === "minimal" && (
-                          <>
-                            <span className="inline-flex h-[24px] items-center rounded bg-primary px-2.5 text-[12px] font-semibold text-surface">
-                              모드 1 · 기사식 광고 기본 모드 (최소 수정)
-                            </span>
-                            <span className="text-[12px] text-ink">
-                              원문 본문의{" "}
-                              <span className="rounded bg-reject-bg px-1.5 py-0.5 text-reject line-through decoration-reject border-b border-reject font-semibold">
-                                빨간줄 교정 대상 문장 (
-                                {
-                                  sentenceSuggestions.filter(
-                                    (s) => !s.selectedAlternativeId
-                                  ).length
-                                }
-                                건)
-                              </span>
-                              을 클릭해 원하는 버전으로 선택하면{" "}
-                              <span className="rounded bg-pass-bg px-1.5 py-0.5 text-pass border-b border-pass font-semibold">
-                                초록색 교정 완료 (
-                                {
-                                  sentenceSuggestions.filter((s) =>
-                                    Boolean(s.selectedAlternativeId)
-                                  ).length
-                                }
-                                건)
-                              </span>
-                              으로 교체됩니다.
-                            </span>
-                          </>
-                        )}
-                        {effectiveMode === "rewrite" && (
-                          <>
-                            <span className="inline-flex h-[24px] items-center rounded bg-primary px-2.5 text-[12px] font-semibold text-surface">
-                              모드 2 · 기사식 광고 리라이팅 모드 (2분할 비교)
-                            </span>
-                            <span className="text-[12px] text-ink">
-                              원문 보도자료(좌측)와 문장 재구성·문단 재배치된 리라이팅 초안(우측)을 2분할로 비교하며, 수정된 구간은{" "}
-                              <span className="rounded bg-[#FEF9C3] border-b border-[#EAB308] px-1.5 py-0.5 font-semibold text-[#854D0E]">
-                                연한 노란색 하이라이트
-                              </span>
-                              로 표시됩니다.
-                            </span>
-                          </>
-                        )}
-                        {effectiveMode === "comparative" && (
-                          <>
-                            <span className="inline-flex h-[24px] items-center rounded bg-secondary px-2.5 text-[12px] font-semibold text-surface">
-                              모드 3 · 비교·기획 기사 모드
-                            </span>
-                            <span className="text-[12px] text-ink">
-                              동종업계 경쟁사·유사 브랜드 2~3곳을 자동 조사하여 비교·분석 문단을 포함한 기획 기사입니다.
-                            </span>
-                          </>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {effectiveMode === "minimal" && (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            onClick={handleApplyAllRecommendedSuggestions}
-                            className="h-[26px] px-2.5 text-[12px] font-semibold text-pass border-pass gap-1"
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5 stroke-[1.75]" />
-                            <span>권장 교정 문장 일괄 초록색 적용</span>
-                          </Button>
-                        )}
-                        <Button
-                          type="button"
-                          variant={showFactNotepad ? "primary" : "secondary"}
-                          size="sm"
-                          onClick={() => setShowFactNotepad((v) => !v)}
-                          className="h-[26px] px-2.5 text-[12px] gap-1"
-                        >
-                          <span>
-                            📌 취재 팩트 메모장 ({factMemos.length}건){" "}
-                            {showFactNotepad ? "접기" : "열기"}
-                          </span>
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
+                {/* 2. 본문 영역: [상단: 보도자료 원문 전체] → [하단: 수정된 내용] 위아래 수직 배치 */}
+                <div className="p-4 space-y-4 flex-1 flex flex-col">
                   {/* 편집기 상단 보조 툴바 */}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      <Label htmlFor="articleBody" className="mr-1">
-                        본문 (총 {bodyParagraphs.length}문단 · 목표 공백 포함 1,200~1,500자)
-                      </Label>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-1 border-b-hairline border-line">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[14px] font-bold text-ink whitespace-nowrap">
+                        본문 (총 {bodyParagraphs.length}문단 · 목표 1,200~1,500자)
+                      </span>
                       <Button
                         type="button"
                         variant="secondary"
@@ -2831,50 +2718,13 @@ export default function JobWorkspacePage() {
                       </Button>
                       <Button
                         type="button"
-                        variant={showInlineDiffHighlight ? "primary" : "secondary"}
-                        size="sm"
-                        onClick={() => setShowInlineDiffHighlight((v) => !v)}
-                        className="h-[26px] px-2.5 text-[12px] gap-1 whitespace-nowrap"
-                      >
-                        <MapPin className="h-3 w-3 stroke-[1.5]" />
-                        <span>
-                          {showInlineDiffHighlight
-                            ? "본문 내 교열 위치 표시 중"
-                            : "본문 내 교열 위치 표시 켜기"}
-                        </span>
-                      </Button>
-                      <Button
-                        type="button"
                         variant="secondary"
                         size="sm"
                         onClick={() => setTallParagraphs((v) => !v)}
                         className="h-[26px] px-2.5 text-[12px] gap-1 whitespace-nowrap"
                       >
-                        {tallParagraphs ? (
-                          <>
-                            <Minimize2 className="h-3 w-3 stroke-[1.5]" />
-                            <span>입력창 기본 높이</span>
-                          </>
-                        ) : (
-                          <>
-                            <Maximize2 className="h-3 w-3 stroke-[1.5]" />
-                            <span>입력창 일괄 크게 보기</span>
-                          </>
-                        )}
+                        {tallParagraphs ? "입력창 기본 높이" : "입력창 일괄 크게 보기"}
                       </Button>
-                      {effectiveMode !== "minimal" && (
-                        <Button
-                          type="button"
-                          variant={showSideBySide ? "primary" : "secondary"}
-                          size="sm"
-                          onClick={() => setShowSideBySide((v) => !v)}
-                          className="h-[26px] px-2.5 text-[12px] whitespace-nowrap"
-                        >
-                          {showSideBySide
-                            ? "2분할 비교 화면 켜짐 (연한 노란색 하이라이트)"
-                            : "원문 vs 리라이팅 2분할 비교 켜기"}
-                        </Button>
-                      )}
                       <Button
                         type="button"
                         variant="ghost"
@@ -2893,297 +2743,111 @@ export default function JobWorkspacePage() {
                         <button
                           type="button"
                           onClick={() => setHighlightedTerm(null)}
-                          className="rounded-md border-hairline border-hold bg-hold-bg px-2 py-0.5 text-[12px] text-hold hover:opacity-80"
+                          className="rounded-md border-hairline border-hold bg-hold-bg px-2 py-0.5 text-[12px] text-hold hover:opacity-80 whitespace-nowrap"
                         >
                           선택된 점검 어구: &quot;{highlightedTerm}&quot; ✕
                         </button>
                       )}
                       <span
-                        className={`text-[12px] leading-[18px] font-medium ${
-                          isBodyInRange ? "text-ink-muted" : "text-hold"
+                        className={`text-[12px] leading-[18px] font-semibold whitespace-nowrap ${
+                          isBodyInRange ? "text-pass" : "text-hold"
                         }`}
                       >
-                        공백 포함 {bodyCharCount.toLocaleString()}자 (원문{" "}
-                        {Array.from(
-                          (data?.job.raw_text ?? "")
-                            .replace(/[\u200B-\u200D\uFEFF]/g, "")
-                            .replace(/\r?\n/g, "")
-                        ).length.toLocaleString()}
-                        자 · 목표 1,200~1,500자)
+                        공백 포함 {bodyCharCount.toLocaleString()}자 (목표 1,200~1,500자)
                       </span>
                     </div>
                   </div>
 
-                  {/* 본문 + 좌측 취재 팩트 메모장 (열려 있을 때) 그리드 컨테이너 */}
-                  <div
-                    className={`grid gap-4 flex-1 ${
-                      showFactNotepad ? "grid-cols-12" : "grid-cols-1"
-                    }`}
-                  >
-                    {/* 좌측: 📌 취재 팩트 메모장 (기업정보·매출액·자체 취재 한 줄 추가) */}
-                    {showFactNotepad && (
-                      <div className="col-span-12 lg:col-span-5 rounded-md border-hairline border-line bg-surface p-4 space-y-3 flex flex-col max-h-[880px] overflow-y-auto">
-                        <div className="space-y-1">
-                          <div className="flex items-center justify-between">
-                            <h3 className="text-[15px] leading-[22px] font-bold text-ink flex items-center gap-1.5">
-                              <span>📌</span>
-                              <span>
-                                취재 팩트 메모장 ({factMemos.length}건)
-                              </span>
-                            </h3>
-                            <button
-                              type="button"
-                              onClick={() => setShowFactNotepad(false)}
-                              className="text-[11px] text-ink-muted hover:text-ink"
-                            >
-                              접기 ✕
-                            </button>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={handleLoadMoreCompanyFacts}
-                            className="inline-flex items-center gap-1 text-[12px] leading-[18px] font-semibold text-hold hover:underline"
-                          >
-                            <span>📰</span>
-                            <span>
-                              최신 뉴스·기업정보·매출액 문장만 메모장에 더 불러오기
-                            </span>
-                          </button>
-                          <p className="text-[12px] leading-[18px] text-ink-muted">
-                            오른쪽 작성 중인 기사는 그대로 유지하면서, 보도자료 기업의{" "}
-                            <strong className="font-semibold text-ink">
-                              기업 기본 정보·매출액·자체 취재 팩트
-                            </strong>
-                            를{" "}
-                            <strong className="font-semibold text-ink">
-                              매경 기사체
-                            </strong>
-                            로 다듬어 원하는 단락에 한 줄씩 끼워 넣는 메모장입니다.
-                          </p>
-                        </div>
-
-                        {/* 자체 취재 내용(기업정보, 매출액 등) 직접 입력 및 추가 박스 */}
-                        <div className="rounded-md border-hairline border-line bg-surface-subtle p-3 space-y-2">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-[11px] font-semibold text-ink-muted">
-                              자체 취재 팩트 분류:
-                            </span>
-                            <select
-                              value={newFactCategory}
-                              onChange={(e) =>
-                                setNewFactCategory(e.target.value)
-                              }
-                              className="h-[24px] rounded border-hairline border-line bg-surface px-2 text-[11px] font-medium text-ink"
-                            >
-                              <option value="기업 기본 정보">
-                                기업 기본 정보 (설립·업종·거점)
-                              </option>
-                              <option value="매출액·실적 정보">
-                                매출액·실적 정보 (매출·영업이익·성장률)
-                              </option>
-                              <option value="브랜드·출시 핵심 팩트">
-                                브랜드·출시 핵심 팩트
-                              </option>
-                              <option value="제품·기술 핵심 특징">
-                                제품·기술 핵심 특징
-                              </option>
-                              <option value="유통·시장 판매 동향">
-                                유통·시장 판매 동향
-                              </option>
-                            </select>
-                          </div>
-                          <textarea
-                            rows={3}
-                            value={newFactInput}
-                            onChange={(e) => setNewFactInput(e.target.value)}
-                            placeholder="기업 정보, 매출액 등 자체 취재 팩트나 보도자료 문장을 붙여넣으세요... (예: 2025년 기준 연 매출액 480억 원 기록, 전국 35개 지점 운영)"
-                            className="w-full resize-y rounded-md border-hairline border-line bg-surface p-2.5 text-[13px] leading-[20px] text-ink focus-visible:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                          />
-                          <div className="flex items-center gap-2">
-                            <Input
-                              value={newFactUrl}
-                              onChange={(e) => setNewFactUrl(e.target.value)}
-                              placeholder="출처 URL (선택)"
-                              className="h-[34px] text-[12px] flex-1 bg-surface"
-                            />
-                            <button
-                              type="button"
-                              onClick={handleAddFactMemo}
-                              disabled={!newFactInput.trim()}
-                              className="h-[34px] shrink-0 rounded-md bg-hold px-3 text-[12px] font-semibold text-surface hover:opacity-90 disabled:opacity-50"
-                            >
-                              + 매경 문체로 추가
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* 메모 리스트 */}
-                        <div className="divide-y-hairline divide-line space-y-3 pt-1">
-                          {factMemos.map((memo) => {
-                            const selectedParaIdx =
-                              memoTargetParas[memo.id] ??
-                              Math.min(
-                                memo.targetParaIdx ?? 1,
-                                Math.max(0, bodyParagraphs.length - 1)
-                              );
-                            const isInserted =
-                              memo.insertedInParaIdx !== null &&
-                              memo.insertedInParaIdx !== undefined;
-                            return (
-                              <div
-                                key={memo.id}
-                                className="pt-3 first:pt-0 space-y-2 text-[13px] leading-[20px]"
-                              >
-                                <p className="text-ink font-medium leading-[21px]">
-                                  {memo.text}
-                                </p>
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="inline-flex items-center rounded bg-hold-bg px-2 py-0.5 text-[11px] font-semibold text-hold">
-                                    {memo.category}
-                                  </span>
-                                  {memo.sourceUrl && (
-                                    <a
-                                      href={memo.sourceUrl}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="inline-flex items-center gap-0.5 text-[11px] text-ink-muted underline hover:text-ink"
-                                    >
-                                      <span>
-                                        {memo.sourceTitle || "출처 원문"} ↗
-                                      </span>
-                                    </a>
-                                  )}
-                                  {isInserted && (
-                                    <span className="inline-flex items-center rounded bg-pass-bg px-1.5 py-0.5 text-[11px] font-semibold text-pass">
-                                      ✓ 단락{" "}
-                                      {String(
-                                        (memo.insertedInParaIdx ?? 0) + 1
-                                      ).padStart(2, "0")}{" "}
-                                      반영됨
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 pt-0.5">
-                                  <select
-                                    value={selectedParaIdx}
-                                    onChange={(e) =>
-                                      setMemoTargetParas((prev) => ({
-                                        ...prev,
-                                        [memo.id]: Number(e.target.value),
-                                      }))
-                                    }
-                                    className="h-[28px] rounded border-hairline border-line bg-surface px-2 text-[12px] text-ink"
-                                  >
-                                    {bodyParagraphs.map((_, pIdx) => (
-                                      <option key={pIdx} value={pIdx}>
-                                        단락 {String(pIdx + 1).padStart(2, "0")}
-                                        에 넣기
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleInsertFactMemoToParagraph(memo)
-                                    }
-                                    className="inline-flex items-center gap-1 text-[12px] font-semibold text-hold hover:underline"
-                                  >
-                                    <span>
-                                      {isInserted
-                                        ? "반영 취소 ↺"
-                                        : "본문 반영 →"}
-                                    </span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleDeleteFactMemo(memo.id)
-                                    }
-                                    className="text-[12px] text-ink-muted hover:text-reject ml-1"
-                                  >
-                                    삭제
-                                  </button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                  {/* ① 상단 박스: 보도자료 원문 전체 보기 */}
+                  <div className="rounded-lg border-hairline border-line bg-surface-subtle p-3.5 space-y-2.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex h-[24px] items-center rounded bg-[#334155] px-2.5 text-[12px] font-bold text-surface whitespace-nowrap shrink-0">
+                          1. 보도자료 원문 전체 ({rawParagraphs.length}단락)
+                        </span>
+                        <span className="text-[12px] text-ink-muted break-keep">
+                          {effectiveMode === "minimal"
+                            ? "원문 전체를 먼저 확인하고, 빨간줄 문장을 클릭하면 아래 수정된 내용의 해당 교정 위치로 바로 이동합니다."
+                            : "입력된 보도자료 원문 전체입니다. 바로 아래에서 원문 대비 수정·리라이팅된 기사 내용을 한눈에 확인하세요."}
+                        </span>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => setExpandOriginalBox((v) => !v)}
+                        className="h-[26px] px-2.5 text-[11px] whitespace-nowrap shrink-0"
+                      >
+                        {expandOriginalBox ? "원문 접기 ▲" : "원문 전체 펼치기 ▼"}
+                      </Button>
+                    </div>
+                    {expandOriginalBox && (
+                      <div className="max-h-[340px] overflow-y-auto pr-1">
+                        {renderOriginalFullWithRedlines()}
                       </div>
                     )}
+                  </div>
 
-                    {/* 우측(또는 전체): 모드별 본문 편집 영역 */}
-                    <div
-                      className={`${
-                        showFactNotepad
-                          ? "col-span-12 lg:col-span-7"
-                          : "col-span-12"
-                      } flex flex-col space-y-3`}
-                    >
+                  {/* ② 하단 박스: 원문 아래 수정된 내용 (전체 폭 100% 사용) */}
+                  <div className="rounded-lg border-hairline border-primary bg-surface p-4 space-y-3 flex-1 flex flex-col">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b-hairline border-line pb-2.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="inline-flex h-[26px] items-center rounded bg-primary px-3 text-[12px] font-bold text-surface whitespace-nowrap shrink-0">
+                          2. 원문 아래 수정된 내용 (
+                          {effectiveMode === "minimal"
+                            ? "모드 1: 최소 수정·문장 교정"
+                            : effectiveMode === "rewrite"
+                            ? "모드 2: 리라이팅·노란색 하이라이트"
+                            : "모드 3: 비교·기획 기사"}
+                          )
+                        </span>
+                        {effectiveMode === "minimal" && (
+                          <span className="text-[12px] font-semibold text-pass whitespace-nowrap">
+                            ✓ 수정 사항 {sentenceSuggestions.length}건 중{" "}
+                            {
+                              sentenceSuggestions.filter((s) =>
+                                Boolean(s.selectedAlternativeId)
+                              ).length
+                            }
+                            건 초록색 교체 완료
+                          </span>
+                        )}
+                        {effectiveMode === "rewrite" && (
+                          <span className="inline-flex items-center rounded bg-[#FEF9C3] border-hairline border-[#EAB308] px-2 py-0.5 text-[11px] font-semibold text-[#854D0E] whitespace-nowrap">
+                            연한 노란색 = 원문 대비 리라이팅·문단 재배치·분량 보강 구간
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {effectiveMode === "minimal" && (
+                          <button
+                            type="button"
+                            onClick={handleApplyAllRecommendedSuggestions}
+                            className="inline-flex h-[28px] items-center rounded-md bg-[#F59E0B] px-3 text-[12px] font-bold text-[#1E293B] hover:opacity-90 whitespace-nowrap shrink-0"
+                          >
+                            ⚡ 권장 교정 문장 전체 초록색 적용
+                          </button>
+                        )}
+                        {effectiveMode !== "minimal" && (
+                          <Button
+                            type="button"
+                            variant={showSideBySide ? "primary" : "secondary"}
+                            size="sm"
+                            onClick={() => setShowSideBySide((v) => !v)}
+                            className="h-[26px] px-2.5 text-[11px] whitespace-nowrap"
+                          >
+                            {showSideBySide
+                              ? "위아래(원문→수정본) 기본 보기로 전환"
+                              : "좌우 2분할 나란히 보기로 전환"}
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* 모드별 수정된 내용 본문 */}
+                    <div className="flex flex-col space-y-3 flex-1">
                       {effectiveMode === "minimal" && paragraphMode ? (
-                        /* 모드 1 전용: [원본(취소선) / 검토(아래 수정 문장 박스)] 클릭 → 토글 버전 선택 → 초록색 교체 뷰 */
-                        <div className="space-y-2.5 flex-1">
-                          {/* 레퍼런스 상단 툴바: [전체 실행] + [✎ 검토 N] 탭 */}
-                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border-hairline border-line bg-surface px-3.5 py-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={handleApplyAllRecommendedSuggestions}
-                                className="inline-flex h-[30px] items-center rounded-md bg-[#F59E0B] px-3 text-[12px] font-bold text-[#1E293B] hover:opacity-90 transition-opacity"
-                                title="모든 검토 문장을 권장 버전 1로 일괄 교체(초록색)합니다"
-                              >
-                                전체 실행
-                              </button>
-                              <span className="relative inline-flex h-[30px] items-center gap-1.5 rounded-md border-hairline border-line bg-surface-subtle px-3 text-[12px] font-bold text-[#134E4A]">
-                                <span>✎ 검토</span>
-                                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#EA580C] px-1 text-[10px] font-bold text-surface">
-                                  {sentenceSuggestions.length}
-                                </span>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const el = document.getElementById("articleTitle");
-                                  el?.focus();
-                                }}
-                                className="inline-flex h-[30px] items-center gap-1 rounded-md px-2.5 text-[12px] font-medium text-ink-muted hover:bg-surface-subtle hover:text-ink"
-                              >
-                                <span>T 제목</span>
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setShowFactNotepad((v) => !v)}
-                                className="inline-flex h-[30px] items-center gap-1 rounded-md px-2.5 text-[12px] font-medium text-ink-muted hover:bg-surface-subtle hover:text-ink"
-                              >
-                                <span>📌 기업·매출 팩트 ({factMemos.length})</span>
-                              </button>
-                            </div>
-                            <span className="text-[12px] text-ink-muted">
-                              기사식 광고 에이전트 최소 수정 검토
-                            </span>
-                          </div>
-
-                          {/* 레퍼런스 스타일 [✎ 검토 · 원본 아래 수정 문장... · ✓ 수정 사항 N건을 찾았습니다] 상태 바 */}
-                          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border-hairline border-line bg-surface px-4 py-2.5">
-                            <div className="flex items-center gap-2.5">
-                              <span className="inline-flex h-[28px] items-center gap-1.5 rounded-full bg-[#134E4A] px-3 text-[12px] font-bold text-surface">
-                                <span>✎ 검토</span>
-                              </span>
-                              <span className="text-[13px] font-medium text-ink-muted">
-                                원본 아래 수정 문장을 클릭해 원하는 표현 버전을 선택하면 초록색으로 교체됩니다.
-                              </span>
-                            </div>
-                            <span className="text-[13px] font-semibold text-pass">
-                              ✓ 수정 사항 {sentenceSuggestions.length}건을 찾았습니다. (
-                              {
-                                sentenceSuggestions.filter((s) =>
-                                  Boolean(s.selectedAlternativeId)
-                                ).length
-                              }
-                              건 초록색 교체 완료)
-                            </span>
-                          </div>
-
-                          <div className="rounded-xl border-hairline border-line bg-surface-subtle p-3.5 space-y-3">
+                        <div className="space-y-3 flex-1">
                           {bodyParagraphs.map((para, idx) => {
                             const isLead = idx === 0;
                             const isClosing =
@@ -3197,11 +2861,11 @@ export default function JobWorkspacePage() {
                               <div
                                 id={`body-para-${idx}`}
                                 key={idx}
-                                className="rounded-md border-hairline border-line bg-surface p-3.5 space-y-2.5"
+                                className="rounded-md border-hairline border-line bg-surface-subtle/50 p-3.5 space-y-2.5"
                               >
                                 <div className="flex flex-wrap items-center justify-between gap-2 border-b-hairline border-line pb-2">
                                   <div className="flex flex-wrap items-center gap-1.5">
-                                    <span className="inline-flex h-[22px] items-center rounded bg-primary-subtle px-2 text-[11px] font-semibold text-primary">
+                                    <span className="inline-flex h-[22px] items-center rounded bg-primary-subtle px-2 text-[11px] font-semibold text-primary whitespace-nowrap">
                                       단락 {String(idx + 1).padStart(2, "0")}
                                       {isLead
                                         ? " (리드문)"
@@ -3209,22 +2873,21 @@ export default function JobWorkspacePage() {
                                         ? " (마무리/인용)"
                                         : ""}
                                     </span>
-                                    <span className="text-[11px] text-ink-muted">
-                                      {Array.from(para).length.toLocaleString()}
-                                      자
+                                    <span className="text-[11px] text-ink-muted whitespace-nowrap">
+                                      {Array.from(para).length.toLocaleString()}자
                                     </span>
-                                    <span className="text-[11px] text-ink-muted">
-                                      · 원본/검토 문장을 클릭해 원하는 버전으로 교체하세요
+                                    <span className="text-[11px] text-ink-muted break-keep">
+                                      · 원본 문장 아래 수정 제안을 클릭해 원하는 표현으로 교체하세요
                                     </span>
                                   </div>
-                                  <div className="flex items-center gap-1">
+                                  <div className="flex items-center gap-1 shrink-0">
                                     <Button
                                       type="button"
                                       variant="secondary"
                                       size="sm"
                                       disabled={idx === 0}
                                       onClick={() => moveParagraph(idx, -1)}
-                                      className="h-[22px] px-2 text-[11px] gap-1"
+                                      className="h-[22px] px-2 text-[11px] gap-1 whitespace-nowrap"
                                     >
                                       <ArrowUp className="h-3 w-3 stroke-[1.5]" />
                                       <span>위로</span>
@@ -3233,11 +2896,9 @@ export default function JobWorkspacePage() {
                                       type="button"
                                       variant="secondary"
                                       size="sm"
-                                      disabled={
-                                        idx === bodyParagraphs.length - 1
-                                      }
+                                      disabled={idx === bodyParagraphs.length - 1}
                                       onClick={() => moveParagraph(idx, 1)}
-                                      className="h-[22px] px-2 text-[11px] gap-1"
+                                      className="h-[22px] px-2 text-[11px] gap-1 whitespace-nowrap"
                                     >
                                       <ArrowDown className="h-3 w-3 stroke-[1.5]" />
                                       <span>아래로</span>
@@ -3247,7 +2908,7 @@ export default function JobWorkspacePage() {
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => addParagraphBelow(idx)}
-                                      className="h-[22px] px-2 text-[11px] gap-1"
+                                      className="h-[22px] px-2 text-[11px] gap-1 whitespace-nowrap"
                                     >
                                       <Plus className="h-3 w-3 stroke-[1.5]" />
                                       <span>문단 추가</span>
@@ -3255,21 +2916,18 @@ export default function JobWorkspacePage() {
                                   </div>
                                 </div>
 
-                                {/* 인터랙티브 교정 문장 뷰 (빨간줄 클릭 → 토글 → 초록색 교체) */}
-                                <div className="rounded-md border-hairline border-line bg-surface-subtle/60 p-3">
+                                {/* 인터랙티브 교정 문장 뷰 (원본 전체 폭 → 아래 수정 제안 전체 폭) */}
+                                <div className="rounded-md border-hairline border-line bg-surface p-3">
                                   {renderMinimalProofreadParagraph(para, idx)}
                                 </div>
 
                                 {/* 수동 미세 편집용 입력창 */}
                                 <details className="group">
                                   <summary className="cursor-pointer text-[11px] font-medium text-ink-muted hover:text-primary select-none">
-                                    ✎ 단락 {String(idx + 1).padStart(2, "0")}{" "}
-                                    텍스트 직접 타이핑 수정 열기
+                                    ✎ 단락 {String(idx + 1).padStart(2, "0")} 텍스트 직접 타이핑 수정 열기
                                   </summary>
                                   <textarea
-                                    rows={
-                                      tallParagraphs ? baseRows + 2 : baseRows
-                                    }
+                                    rows={tallParagraphs ? baseRows + 2 : baseRows}
                                     value={para}
                                     onChange={(e) =>
                                       updateParagraph(idx, e.target.value)
@@ -3280,71 +2938,38 @@ export default function JobWorkspacePage() {
                               </div>
                             );
                           })}
-                          </div>
                         </div>
-                      ) : showSideBySide || effectiveMode === "rewrite" ? (
-                        /* 모드 2 전용 (및 2분할 비교 켜짐 시): 원문 보도자료 vs 리라이팅 기사식 광고 2분할 비교 + 연한 노란색 수정 하이라이트 */
+                      ) : showSideBySide ? (
+                        /* 좌우 2분할 비교 켜짐 시 */
                         <div className="space-y-3 flex-1">
                           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 flex-1 min-h-[480px]">
-                            {/* 좌측: 원문 보도자료 단락별 뷰 */}
                             <div className="flex flex-col space-y-2 rounded-md border-hairline border-line bg-surface-subtle p-3.5">
                               <div className="flex items-center justify-between border-b-hairline border-line pb-2">
                                 <span className="text-[13px] font-semibold text-ink">
                                   📄 원문 보도자료 ({rawParagraphs.length}단락)
                                 </span>
-                                <span className="text-[11px] text-ink-muted">
-                                  원문 구조·문장 대조 기준
-                                </span>
                               </div>
                               <div className="space-y-2.5 overflow-y-auto max-h-[760px] pr-1">
-                                {rawParagraphs.map((rawPara, rIdx) => {
-                                  const rawProbe = rawPara.slice(
-                                    0,
-                                    Math.min(20, rawPara.length)
-                                  );
-                                  const movedToIdx = bodyParagraphs.findIndex(
-                                    (bp) =>
-                                      rawProbe.length >= 10 &&
-                                      bp.includes(rawProbe)
-                                  );
-                                  return (
-                                    <div
-                                      key={rIdx}
-                                      className="rounded border-hairline border-line bg-surface p-3 space-y-1.5 text-[14px] leading-[24px] text-ink-muted"
-                                    >
-                                      <div className="flex items-center justify-between text-[11px]">
-                                        <span className="font-semibold text-ink">
-                                          원문 {String(rIdx + 1).padStart(2, "0")}단락 (
-                                          {Array.from(rawPara).length}자)
-                                        </span>
-                                        {movedToIdx !== -1 &&
-                                        movedToIdx !== rIdx ? (
-                                          <span className="rounded bg-[#FEF9C3] border-hairline border-[#EAB308] px-1.5 py-0.5 font-semibold text-[#854D0E]">
-                                            → 리라이팅 {movedToIdx + 1}문단으로 위치 이동
-                                          </span>
-                                        ) : (
-                                          <span className="text-ink-muted">
-                                            → 리라이팅 재구성 반영
-                                          </span>
-                                        )}
-                                      </div>
-                                      <p className="whitespace-pre-wrap">
-                                        {rawPara}
-                                      </p>
+                                {rawParagraphs.map((rawPara, rIdx) => (
+                                  <div
+                                    key={rIdx}
+                                    className="rounded border-hairline border-line bg-surface p-3 space-y-1.5 text-[14px] leading-[24px] text-ink-muted"
+                                  >
+                                    <div className="flex items-center justify-between text-[11px]">
+                                      <span className="font-semibold text-ink">
+                                        원문 {String(rIdx + 1).padStart(2, "0")}단락 ({Array.from(rawPara).length}자)
+                                      </span>
                                     </div>
-                                  );
-                                })}
+                                    <p className="whitespace-pre-wrap">{rawPara}</p>
+                                  </div>
+                                ))}
                               </div>
                             </div>
 
-                            {/* 우측: 리라이팅된 기사식 광고 버전 (연한 노란색 수정 하이라이트 + 직접 편집) */}
                             <div className="flex flex-col space-y-2 rounded-md border-hairline border-primary bg-surface p-3.5">
                               <div className="flex flex-wrap items-center justify-between gap-2 border-b-hairline border-line pb-2">
                                 <span className="text-[13px] font-semibold text-primary">
-                                  ✨ 리라이팅된 기사식 광고 버전 ({bodyParagraphs.length}문단)
-                                </span>
-                                <span className="inline-flex items-center rounded bg-[#FEF9C3] border-hairline border-[#EAB308] px-2 py-0.5 text-[11px] font-semibold text-[#854D0E]">
-                                  연한 노란색 = 원문 대비 문장 리라이팅·문단 이동·분량 보강 구간
+                                  ✨ 수정·리라이팅된 기사식 광고 버전 ({bodyParagraphs.length}문단)
                                 </span>
                               </div>
                               <div className="space-y-3 overflow-y-auto max-h-[760px] pr-1">
@@ -3359,65 +2984,16 @@ export default function JobWorkspacePage() {
                                       key={idx}
                                       className="rounded border-hairline border-line bg-surface-subtle p-3 space-y-2"
                                     >
-                                      <div className="flex items-center justify-between gap-2">
-                                        <div className="flex items-center gap-1.5">
-                                          <span className="inline-flex h-[20px] items-center rounded bg-primary-subtle px-2 text-[11px] font-semibold text-primary">
-                                            리라이팅 {String(idx + 1).padStart(2, "0")}문단
-                                          </span>
-                                          <span className="text-[11px] text-ink-muted">
-                                            {Array.from(para).length}자
-                                          </span>
-                                        </div>
-                                        <div className="flex items-center gap-1">
-                                          <Button
-                                            type="button"
-                                            variant="secondary"
-                                            size="sm"
-                                            disabled={idx === 0}
-                                            onClick={() =>
-                                              moveParagraph(idx, -1)
-                                            }
-                                            className="h-[22px] px-1.5 text-[11px]"
-                                          >
-                                            위로
-                                          </Button>
-                                          <Button
-                                            type="button"
-                                            variant="secondary"
-                                            size="sm"
-                                            disabled={
-                                              idx === bodyParagraphs.length - 1
-                                            }
-                                            onClick={() =>
-                                              moveParagraph(idx, 1)
-                                            }
-                                            className="h-[22px] px-1.5 text-[11px]"
-                                          >
-                                            아래로
-                                          </Button>
-                                        </div>
-                                      </div>
-
-                                      {/* 연한 노란색 수정 하이라이팅 뷰 */}
                                       <div className="rounded border-hairline border-line bg-surface p-2.5">
-                                        {renderRewriteYellowHighlights(
-                                          para,
-                                          idx
-                                        )}
+                                        {renderRewriteYellowHighlights(para, idx)}
                                       </div>
-
-                                      {/* 문단 직접 편집창 */}
                                       <textarea
-                                        rows={
-                                          tallParagraphs
-                                            ? baseRows + 2
-                                            : baseRows
-                                        }
+                                        rows={tallParagraphs ? baseRows + 2 : baseRows}
                                         value={para}
                                         onChange={(e) =>
                                           updateParagraph(idx, e.target.value)
                                         }
-                                        className="w-full resize-y rounded border-hairline border-line bg-surface p-2 text-[14px] leading-[22px] text-ink focus-visible:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                                        className="w-full resize-y rounded border-hairline border-line bg-surface p-2 text-[14px] leading-[22px] text-ink"
                                       />
                                     </div>
                                   );
@@ -3453,10 +3029,9 @@ export default function JobWorkspacePage() {
                             const hasAnyHighlight =
                               paraDiffs.length > 0 || hasCustomTerm;
                             const isFocusedPara = focusedParaIdx === idx;
-
                             const baseRows = Math.max(
                               3,
-                              Math.ceil(Array.from(para).length / 55)
+                              Math.ceil(Array.from(para).length / 65)
                             );
 
                             return (
@@ -3468,7 +3043,7 @@ export default function JobWorkspacePage() {
                                     setFocusedParaIdx(null);
                                   }
                                 }}
-                                className={`rounded-md border-hairline p-3 space-y-2 transition-colors ${
+                                className={`rounded-md border-hairline p-3.5 space-y-2.5 transition-colors ${
                                   isFocusedPara
                                     ? "border-primary bg-info-bg"
                                     : hasAnyHighlight
@@ -3478,17 +3053,16 @@ export default function JobWorkspacePage() {
                               >
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <div className="flex flex-wrap items-center gap-1.5">
-                                    <span className="inline-flex h-[22px] items-center rounded bg-primary-subtle px-2 text-[11px] font-semibold text-primary">
-                                      {idx + 1}문단
+                                    <span className="inline-flex h-[22px] items-center rounded bg-primary-subtle px-2 text-[11px] font-semibold text-primary whitespace-nowrap">
+                                      수정 단락 {String(idx + 1).padStart(2, "0")}
                                       {isLead
                                         ? " (리드문)"
                                         : isClosing
                                         ? " (마무리/인용)"
                                         : ""}
                                     </span>
-                                    <span className="text-[11px] text-ink-muted">
-                                      {Array.from(para).length.toLocaleString()}
-                                      자
+                                    <span className="text-[11px] text-ink-muted whitespace-nowrap">
+                                      {Array.from(para).length.toLocaleString()}자
                                     </span>
 
                                     {data?.job.mode === "comparative" &&
@@ -3498,42 +3072,20 @@ export default function JobWorkspacePage() {
                                         /(?:경쟁이\s*치열하게\s*전개|차별화를\s*꾀했다|차별점으로\s*꼽힌다|비교해\s*볼\s*때|기존\s*스크린|동종\s*라이프스타일|뉴미디어\s*콘텐츠\s*스튜디오)/.test(
                                           para
                                         )) && (
-                                        <span className="inline-flex items-center gap-1 rounded border-hairline border-secondary bg-secondary-subtle px-2 py-0.5 text-[11px] font-semibold text-secondary">
-                                          <span>
-                                            📊 동종업계·경쟁사 비교·기획 문단
-                                          </span>
+                                        <span className="inline-flex items-center gap-1 rounded border-hairline border-secondary bg-secondary-subtle px-2 py-0.5 text-[11px] font-semibold text-secondary whitespace-nowrap">
+                                          <span>📊 동종업계·경쟁사 비교·기획 문단</span>
                                         </span>
                                       )}
-
-                                    {paraDiffs.map((pd) => (
-                                      <span
-                                        key={pd.diffIdx}
-                                        className={`inline-flex items-center gap-1 rounded border-hairline px-2 py-0.5 text-[11px] font-semibold ${
-                                          pd.isRestored
-                                            ? "border-hold bg-hold-bg text-hold"
-                                            : "border-pass bg-pass-bg text-pass"
-                                        }`}
-                                      >
-                                        <MapPin className="h-3 w-3 stroke-[1.75]" />
-                                        <span>
-                                          [교열 {pd.diffIdx + 1}] {pd.original}{" "}
-                                          → {pd.replacement}
-                                          {pd.isRestored
-                                            ? " (원문 복원됨)"
-                                            : " 위치"}
-                                        </span>
-                                      </span>
-                                    ))}
                                   </div>
 
-                                  <div className="flex items-center gap-1">
+                                  <div className="flex items-center gap-1 shrink-0">
                                     <Button
                                       type="button"
                                       variant="secondary"
                                       size="sm"
                                       disabled={idx === 0}
                                       onClick={() => moveParagraph(idx, -1)}
-                                      className="h-[24px] px-2 text-[11px] gap-1"
+                                      className="h-[24px] px-2 text-[11px] gap-1 whitespace-nowrap"
                                     >
                                       <ArrowUp className="h-3 w-3 stroke-[1.5]" />
                                       <span>위로</span>
@@ -3542,11 +3094,9 @@ export default function JobWorkspacePage() {
                                       type="button"
                                       variant="secondary"
                                       size="sm"
-                                      disabled={
-                                        idx === bodyParagraphs.length - 1
-                                      }
+                                      disabled={idx === bodyParagraphs.length - 1}
                                       onClick={() => moveParagraph(idx, 1)}
-                                      className="h-[24px] px-2 text-[11px] gap-1"
+                                      className="h-[24px] px-2 text-[11px] gap-1 whitespace-nowrap"
                                     >
                                       <ArrowDown className="h-3 w-3 stroke-[1.5]" />
                                       <span>아래로</span>
@@ -3556,7 +3106,7 @@ export default function JobWorkspacePage() {
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => addParagraphBelow(idx)}
-                                      className="h-[24px] px-2 text-[11px] gap-1"
+                                      className="h-[24px] px-2 text-[11px] gap-1 whitespace-nowrap"
                                     >
                                       <Plus className="h-3 w-3 stroke-[1.5]" />
                                       <span>문단 추가</span>
@@ -3567,7 +3117,7 @@ export default function JobWorkspacePage() {
                                       size="sm"
                                       disabled={bodyParagraphs.length <= 1}
                                       onClick={() => removeParagraph(idx)}
-                                      className="h-[24px] px-2 text-[11px] text-reject hover:bg-reject-bg hover:text-reject gap-1"
+                                      className="h-[24px] px-2 text-[11px] text-reject hover:bg-reject-bg hover:text-reject gap-1 whitespace-nowrap"
                                     >
                                       <Trash2 className="h-3 w-3 stroke-[1.5]" />
                                       <span>삭제</span>
@@ -3575,24 +3125,23 @@ export default function JobWorkspacePage() {
                                   </div>
                                 </div>
 
-                                {showInlineDiffHighlight && hasAnyHighlight && (
-                                  <div className="rounded border-hairline border-info bg-surface px-3 py-2 text-[14px] leading-[24px] text-ink">
-                                    <div className="mb-1 flex items-center justify-between text-[11px] font-semibold text-info">
-                                      <span>
-                                        📍 {idx + 1}문단 내 교열·점검 어구 위치
-                                        표시 (아래 입력창에서 직접 수정 가능)
-                                      </span>
-                                    </div>
-                                    <p className="whitespace-pre-wrap">
-                                      {renderTextWithDiffHighlights(para)}
-                                    </p>
+                                {effectiveMode === "rewrite" ? (
+                                  <div className="rounded border-hairline border-line bg-surface p-3">
+                                    {renderRewriteYellowHighlights(para, idx)}
                                   </div>
+                                ) : (
+                                  showInlineDiffHighlight &&
+                                  hasAnyHighlight && (
+                                    <div className="rounded border-hairline border-info bg-surface px-3 py-2 text-[14px] leading-[24px] text-ink">
+                                      <p className="whitespace-pre-wrap">
+                                        {renderTextWithDiffHighlights(para)}
+                                      </p>
+                                    </div>
+                                  )
                                 )}
 
                                 <textarea
-                                  rows={
-                                    tallParagraphs ? baseRows + 3 : baseRows
-                                  }
+                                  rows={tallParagraphs ? baseRows + 3 : baseRows}
                                   value={para}
                                   onChange={(e) =>
                                     updateParagraph(idx, e.target.value)
@@ -3605,18 +3154,6 @@ export default function JobWorkspacePage() {
                         </div>
                       ) : (
                         <div className="space-y-2.5 flex-1 flex flex-col">
-                          {showInlineDiffHighlight &&
-                            ((s5Output?.diffs && s5Output.diffs.length > 0) ||
-                              highlightedTerm) && (
-                              <div className="rounded-md border-hairline border-info bg-info-bg p-3 space-y-1.5 resize-y overflow-auto">
-                                <div className="text-[12px] font-semibold text-info">
-                                  📍 본문 내 교열·점검 어구 위치 표시
-                                </div>
-                                <div className="whitespace-pre-wrap rounded border-hairline border-line bg-surface p-3 text-[15px] leading-[26px] text-ink">
-                                  {renderTextWithDiffHighlights(body)}
-                                </div>
-                              </div>
-                            )}
                           <textarea
                             id="articleBody"
                             rows={tallParagraphs ? 26 : 16}
@@ -3645,7 +3182,7 @@ export default function JobWorkspacePage() {
                       onClick={() =>
                         void handleAutoFixRule("FMT-12", "")
                       }
-                      className="h-[22px] px-2 text-[11px] text-primary"
+                      className="h-[22px] px-2 text-[11px] text-primary whitespace-nowrap"
                     >
                       [제공={data?.job.company_name || "기관명"}] 자동 보완
                     </Button>
@@ -3667,7 +3204,7 @@ export default function JobWorkspacePage() {
                     </Label>
                     <div className="flex items-center gap-1.5">
                       <span
-                        className={`text-[11px] font-medium ${
+                        className={`text-[11px] font-medium whitespace-nowrap ${
                           byline.trim() ? "text-pass" : "text-hold"
                         }`}
                       >
@@ -3683,7 +3220,7 @@ export default function JobWorkspacePage() {
                           onClick={() =>
                             void handleAutoFixRule("FMT-11", "")
                           }
-                          className="h-[22px] px-2 text-[11px]"
+                          className="h-[22px] px-2 text-[11px] whitespace-nowrap"
                         >
                           기본 바이라인 자동 입력
                         </Button>
@@ -3697,6 +3234,129 @@ export default function JobWorkspacePage() {
                     onChange={(e) => setByline(e.target.value)}
                   />
                 </div>
+
+                {/* 3. 아래쪽(하단) 배치: 💬 AI 채팅으로 기사 즉시 수정 */}
+                <div className="p-4 bg-primary-subtle/40 space-y-2.5">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex h-[24px] items-center rounded bg-primary px-2.5 text-[12px] font-bold text-surface whitespace-nowrap shrink-0">
+                        💬 AI 채팅으로 기사 수정 (아래쪽 & 오른쪽 하단 지원)
+                      </span>
+                      <span className="text-[12px] text-ink-muted break-keep">
+                        원하는 수정 방향을 채팅으로 입력하면 제목·부제·본문 문단이 즉시 개고됩니다 (openai/gpt-5.6-sol)
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 자주 쓰는 원클릭 추천 프롬프트 칩 */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {[
+                      "경쟁사 브랜드별로 문단을 각각 분리해서 작성해줘",
+                      "보도자료 원문과 문단 구성·어순을 더 다르게 재구성해줘",
+                      "본문 분량을 1,350자 내외로 배경 설명을 보강해줘",
+                      "제목과 리드문을 더 정통 경제신문 기사 톤으로 다듬어줘",
+                      "과장·홍보성 수식어를 빼고 건조한 팩트 위주로 다듬어줘",
+                    ].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        disabled={chatLoading}
+                        onClick={() => void handleChatEdit(preset)}
+                        className="rounded-md border-hairline border-line bg-surface px-2.5 py-1 text-[11px] leading-[16px] font-medium text-ink hover:border-primary hover:text-primary transition-colors disabled:opacity-50 whitespace-nowrap"
+                      >
+                        + {preset}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 채팅 입력창 + 실행 버튼 */}
+                  <div className="flex items-center gap-2">
+                    <Input
+                      placeholder="예: 경쟁사 브랜드별로 문단을 각각 나누어 작성해줘 / 3문단 내용을 더 간결하게 줄여줘 (Enter)"
+                      value={chatInput}
+                      disabled={chatLoading}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void handleChatEdit();
+                        }
+                      }}
+                      className="flex-1 bg-surface text-[13px]"
+                    />
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      disabled={chatLoading || !chatInput.trim()}
+                      onClick={() => void handleChatEdit()}
+                      className="h-[36px] px-4 whitespace-nowrap shrink-0"
+                    >
+                      {chatLoading ? "AI 수정 중..." : "AI 수정 적용"}
+                    </Button>
+                  </div>
+
+                  {/* 최근 채팅 수정 내역 및 원클릭 되돌리기(Undo) */}
+                  {chatHistory.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      {chatHistory.slice(0, 3).map((item) => (
+                        <div
+                          key={item.id}
+                          className="flex flex-wrap items-center justify-between gap-2 rounded-md border-hairline border-pass bg-pass-bg/60 px-3 py-2 text-[12px] leading-[18px]"
+                        >
+                          <div className="space-y-0.5 flex-1">
+                            <span className="font-semibold text-ink">
+                              요청 ({item.createdAt}): &quot;{item.instruction}&quot;
+                            </span>
+                            <p className="text-pass font-medium">
+                              ↳ AI 반영 완료: {item.replySummary}
+                            </p>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => void handleUndoChatEdit(item.id)}
+                            className="h-[24px] px-2 text-[11px] gap-1 shrink-0 whitespace-nowrap"
+                          >
+                            <RotateCcw className="h-3 w-3 stroke-[1.5]" />
+                            <span>되돌리기</span>
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* 접이식: 보도자료 원문 대비 AI 편집·교열 요약 내역 */}
+                <details className="p-4 bg-surface-subtle/60">
+                  <summary className="cursor-pointer text-[12px] font-semibold text-info select-none">
+                    ⓘ 보도자료 원문 대비 AI 자동 교열 내역 상세 보기 (총 {(s5Output?.diffs?.length ?? 0) + 2}건)
+                  </summary>
+                  <ul className="mt-2.5 space-y-1.5 text-[12px] leading-[18px] text-ink">
+                    <li>
+                      • <strong className="font-semibold">제목·부제 신설:</strong> 원문에 없던 매경 스타일 40자 내외 제목 후보 3종 및 명사형 부제 생성
+                    </li>
+                    {(s5Output?.diffs ?? []).map((d, idx) => (
+                      <li
+                        key={idx}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded bg-surface border-hairline border-line px-2.5 py-1.5"
+                      >
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-semibold text-primary">[교열 {idx + 1}]</span>
+                          <span className="rounded bg-reject-bg px-1.5 py-0.5 text-reject line-through">
+                            {d.original}
+                          </span>
+                          <span className="text-ink-muted">→</span>
+                          <span className="rounded bg-pass-bg px-1.5 py-0.5 text-pass font-semibold">
+                            {d.replacement}
+                          </span>
+                          <span className="text-ink-muted">({d.reason})</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
               </div>
             )}
           </Card>
@@ -3895,9 +3555,9 @@ export default function JobWorkspacePage() {
           </Card>
         </section>
 
-        {/* 우측: 규정 체크 리포트 / 클레임 Ledger / 출처 목록 탭 (360px) */}
+        {/* 우측: 상단 규정 체크 리포트 + 오른쪽 하단 AI 채팅으로 기사 수정 (350px) */}
         {!wideEditorMode && (
-        <aside className="w-[360px] shrink-0">
+        <aside className="w-[350px] shrink-0 flex flex-col gap-4">
           <Card className="p-0 overflow-hidden">
             <div className="grid grid-cols-4 border-b-hairline border-line bg-surface-subtle p-1 gap-1">
               {[
@@ -4265,6 +3925,66 @@ export default function JobWorkspacePage() {
                   </pre>
                 </div>
               )}
+            </div>
+          </Card>
+
+          {/* 오른쪽 하단: 💬 AI 채팅으로 기사 수정 빠른 패널 */}
+          <Card className="p-3.5 space-y-2.5 border-primary bg-surface">
+            <div className="flex items-center justify-between gap-2 border-b-hairline border-line pb-2">
+              <span className="inline-flex h-[22px] items-center rounded bg-primary px-2 text-[11px] font-bold text-surface whitespace-nowrap">
+                💬 AI 채팅으로 기사 수정
+              </span>
+              <span className="text-[10px] font-medium text-ink-muted whitespace-nowrap">
+                오른쪽 하단 빠른 개고
+              </span>
+            </div>
+            <p className="text-[11px] leading-[16px] text-ink-muted break-keep">
+              원하는 수정 방향을 선택하거나 입력하면 본문·제목이 즉시 개고됩니다.
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {[
+                "경쟁사 브랜드별로 문단을 각각 분리해줘",
+                "원문과 문단 구성·어순을 더 다르게 재구성해줘",
+                "본문 분량을 1,350자 내외로 보강해줘",
+                "제목과 리드문을 더 정통 경제신문 기사 톤으로 다듬어줘",
+                "과장·홍보성 수식어를 빼고 건조한 팩트 위주로 다듬어줘",
+              ].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  disabled={chatLoading}
+                  onClick={() => void handleChatEdit(preset)}
+                  className="text-left rounded border-hairline border-line bg-surface-subtle px-2 py-1 text-[11px] leading-[15px] font-medium text-ink hover:border-primary hover:text-primary transition-colors break-keep disabled:opacity-50"
+                >
+                  + {preset}
+                </button>
+              ))}
+            </div>
+            <div className="space-y-1.5 pt-1">
+              <textarea
+                rows={2}
+                value={chatInput}
+                disabled={chatLoading}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    void handleChatEdit();
+                  }
+                }}
+                placeholder="예: 3문단 내용을 더 간결하게 줄여줘 (Enter)"
+                className="w-full resize-y rounded-md border-hairline border-line bg-surface p-2 text-[12px] leading-[18px] text-ink focus-visible:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+              />
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                disabled={chatLoading || !chatInput.trim()}
+                onClick={() => void handleChatEdit()}
+                className="w-full h-[32px] text-[12px] font-bold whitespace-nowrap"
+              >
+                {chatLoading ? "AI가 기사 수정 중..." : "AI 수정 적용"}
+              </Button>
             </div>
           </Card>
         </aside>

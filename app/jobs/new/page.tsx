@@ -171,7 +171,7 @@ export default function NewJobPage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1120px] p-6 space-y-6">
+      <main className="mx-auto max-w-[1240px] p-6 space-y-6">
         <Card className="p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-[14px] leading-[22px] font-medium text-ink">
@@ -216,71 +216,86 @@ export default function NewJobPage() {
                   작업 생성 후 편집 화면에서도 모드를 즉시 전환할 수 있습니다.
                 </span>
               </div>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <button
                   type="button"
                   onClick={() => setMode("minimal")}
-                  className={`flex flex-col items-start rounded-md border-hairline p-4 text-left transition-colors duration-150 ${
+                  className={`flex flex-col justify-between items-start rounded-md border-hairline p-4 text-left transition-colors duration-150 ${
                     mode === "minimal"
                       ? "border-primary bg-primary-subtle"
                       : "border-line bg-surface hover:bg-surface-subtle"
                   }`}
                 >
-                  <div className="flex items-center justify-between w-full gap-2">
-                    <span className="text-[14px] leading-[22px] font-semibold text-ink">
+                  <div className="space-y-1.5 w-full">
+                    <div className="flex items-center justify-between w-full gap-2">
+                      <span className="text-[11px] font-bold text-primary whitespace-nowrap">
+                        MODE 01 · 기본 교정
+                      </span>
+                      <span className="whitespace-nowrap shrink-0 rounded-md border-hairline border-primary bg-primary px-2 py-0.5 text-[11px] leading-[16px] font-semibold text-surface">
+                        NEW · 원문 교정
+                      </span>
+                    </div>
+                    <div className="text-[15px] leading-[22px] font-bold text-ink whitespace-nowrap">
                       모드 1: 기사식광고 기본 모드 (최소 수정)
-                    </span>
-                    <span className="rounded-md border-hairline border-primary bg-surface px-2 py-0.5 text-[11px] leading-[16px] font-semibold text-primary shrink-0">
-                      권장 · 원문 교열
-                    </span>
+                    </div>
+                    <p className="mt-1 text-[12px] leading-[19px] text-ink-muted break-keep">
+                      원문 전체와 수정된 내용을 위아래로 비교하며, <strong className="text-reject underline">빨간줄</strong> 교정 문장을 클릭해 원하는 버전으로 바꾸면 <strong className="text-pass">초록색</strong>으로 교체됩니다. 왼쪽 <strong className="font-semibold text-ink">📌 취재 팩트 메모장</strong>에서 기업정보·매출액 등을 단락에 추가합니다.
+                    </p>
                   </div>
-                  <span className="mt-1.5 text-[12px] leading-[18px] text-ink-muted">
-                    원문을 최소한으로 다듬는 모드입니다. 에이전트가 교정한 원문 문장(빨간 줄)을 클릭해 대안 표현 토글로 교체(초록색)하고, <strong className="font-semibold text-ink">취재 팩트 메모장</strong>에서 기업정보·매출액 등을 한 줄 추가할 수 있습니다.
-                  </span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setMode("rewrite")}
-                  className={`flex flex-col items-start rounded-md border-hairline p-4 text-left transition-colors duration-150 ${
+                  className={`flex flex-col justify-between items-start rounded-md border-hairline p-4 text-left transition-colors duration-150 ${
                     mode === "rewrite" || mode === "ad_article"
                       ? "border-primary bg-primary-subtle"
                       : "border-line bg-surface hover:bg-surface-subtle"
                   }`}
                 >
-                  <div className="flex items-center justify-between w-full gap-2">
-                    <span className="text-[14px] leading-[22px] font-semibold text-ink">
+                  <div className="space-y-1.5 w-full">
+                    <div className="flex items-center justify-between w-full gap-2">
+                      <span className="text-[11px] font-bold text-primary whitespace-nowrap">
+                        MODE 02 · 전면 재작성
+                      </span>
+                      <span className="whitespace-nowrap shrink-0 rounded-md border-hairline border-hold bg-hold-bg px-2 py-0.5 text-[11px] leading-[16px] font-semibold text-hold">
+                        원문·수정본 노란색 비교
+                      </span>
+                    </div>
+                    <div className="text-[15px] leading-[22px] font-bold text-ink whitespace-nowrap">
                       모드 2: 기사식광고 리라이팅 모드
-                    </span>
-                    <span className="rounded-md border-hairline border-hold bg-hold-bg px-2 py-0.5 text-[11px] leading-[16px] font-semibold text-hold shrink-0">
-                      2분할 비교 · 재작성
-                    </span>
+                    </div>
+                    <p className="mt-1 text-[12px] leading-[19px] text-ink-muted break-keep">
+                      원문 기사를 기반으로 문장 구성을 늘리거나 줄이고 문단 위치를 바꾸어 매경 기사식광고(1,200~1,500자)로 재작성합니다. <strong className="font-semibold text-ink">원문 vs 수정본 비교 및 연한 노란색 하이라이팅</strong>을 제공합니다.
+                    </p>
                   </div>
-                  <span className="mt-1.5 text-[12px] leading-[18px] text-ink-muted">
-                    원문 기사를 기반으로 문장 구성을 늘리거나 줄이고 문단 위치를 바꾸어 매경 기사식광고(1,200~1,500자)로 재작성합니다. <strong className="font-semibold text-ink">원문 vs 재작성 2분할 비교 및 연노란색 수정 하이라이팅</strong>을 제공합니다.
-                  </span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setMode("comparative")}
-                  className={`flex flex-col items-start rounded-md border-hairline p-4 text-left transition-colors duration-150 ${
+                  className={`flex flex-col justify-between items-start rounded-md border-hairline p-4 text-left transition-colors duration-150 ${
                     mode === "comparative"
                       ? "border-secondary bg-secondary-subtle"
                       : "border-line bg-surface hover:bg-surface-subtle"
                   }`}
                 >
-                  <div className="flex items-center justify-between w-full gap-2">
-                    <span className="text-[14px] leading-[22px] font-semibold text-ink">
+                  <div className="space-y-1.5 w-full">
+                    <div className="flex items-center justify-between w-full gap-2">
+                      <span className="text-[11px] font-bold text-secondary whitespace-nowrap">
+                        MODE 03 · 기획 기사
+                      </span>
+                      <span className="whitespace-nowrap shrink-0 rounded-md border-hairline border-secondary bg-secondary px-2 py-0.5 text-[11px] leading-[16px] font-semibold text-surface">
+                        경쟁사 자동 조사
+                      </span>
+                    </div>
+                    <div className="text-[15px] leading-[22px] font-bold text-secondary whitespace-nowrap">
                       모드 3: 비교·기획 기사 모드
-                    </span>
-                    <span className="rounded-md border-hairline border-secondary bg-surface px-2 py-0.5 text-[11px] leading-[16px] font-semibold text-secondary shrink-0">
-                      실험 단계 · 경쟁사 조사
-                    </span>
+                    </div>
+                    <p className="mt-1 text-[12px] leading-[19px] text-ink-muted break-keep">
+                      동종업계 경쟁사·유사 브랜드 2~3곳을 웹에서 함께 조사하여 비교·분석 문단을 포함한 기획 기사로 작성합니다. 출처 매핑 및 확장 승인 체크리스트 검수가 필수입니다.
+                    </p>
                   </div>
-                  <span className="mt-1.5 text-[12px] leading-[18px] text-ink-muted">
-                    동종업계 경쟁사·유사 브랜드 2~3곳을 웹에서 함께 조사하여 비교·분석 문단을 포함한 기획 기사로 작성합니다. 출처 매핑 및 확장 승인 체크리스트 검수가 필수입니다.
-                  </span>
                 </button>
               </div>
             </div>

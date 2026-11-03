@@ -2081,6 +2081,21 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     setSentenceSuggestions(nextList);
   }
 
+  function handleRevertAllSuggestions() {
+    let nextBody = body;
+    const nextList = sentenceSuggestions.map((item) => {
+      if (!item.selectedAltId) return item;
+      const curAlt = item.alternatives.find((a) => a.id === item.selectedAltId);
+      if (curAlt && nextBody.includes(curAlt.text)) {
+        nextBody = nextBody.replace(curAlt.text, item.originalSentence);
+      }
+      return { ...item, selectedAltId: null };
+    });
+    setBody(nextBody);
+    setSentenceSuggestions(nextList);
+    setActiveSuggestionId(null);
+  }
+
   async function handleRegenerateAiMinimalSuggestions() {
     if (aiProofreadLoading) return;
     setAiProofreadLoading(true);
@@ -3366,25 +3381,45 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5">
-                    {effectiveMode === "minimal" && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={handleApplyAllRecommendedSuggestions}
-                          className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md bg-[#F5B041] px-3 text-[12px] font-bold text-ink hover:opacity-90"
-                        >
-                          ✓ 권장 교정 일괄 적용 ({sentenceSuggestions.filter((s) => Boolean(s.selectedAltId)).length}/{sentenceSuggestions.length})
-                        </button>
-                        <button
-                          type="button"
-                          disabled={aiProofreadLoading}
-                          onClick={handleRegenerateAiMinimalSuggestions}
-                          className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md border-hairline border-primary bg-surface px-2.5 text-[11px] font-bold text-primary hover:bg-primary-subtle disabled:opacity-50"
-                        >
-                          {aiProofreadLoading ? "✨ AI 최소 교열 중..." : "✨ Claude 4.6 자연스러운 최소 교열"}
-                        </button>
-                      </>
-                    )}
+                    {effectiveMode === "minimal" && (() => {
+                      const appliedCount = sentenceSuggestions.filter((s) => Boolean(s.selectedAltId)).length;
+                      const totalCount = sentenceSuggestions.length;
+                      const allApplied = totalCount > 0 && appliedCount === totalCount;
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            onClick={allApplied ? handleRevertAllSuggestions : handleApplyAllRecommendedSuggestions}
+                            className={`inline-flex h-[28px] items-center whitespace-nowrap rounded-md px-3 text-[12px] font-bold hover:opacity-90 ${
+                              allApplied
+                                ? "border-hairline border-reject bg-reject-bg text-reject"
+                                : "bg-[#F5B041] text-ink"
+                            }`}
+                          >
+                            {allApplied
+                              ? `↩ 교정 일괄 해제 (${appliedCount}/${totalCount})`
+                              : `✓ 권장 교정 일괄 적용 (${appliedCount}/${totalCount})`}
+                          </button>
+                          {appliedCount > 0 && !allApplied && (
+                            <button
+                              type="button"
+                              onClick={handleRevertAllSuggestions}
+                              className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md border-hairline border-reject bg-surface px-2.5 text-[11px] font-bold text-reject hover:bg-reject-bg"
+                            >
+                              ↩ 교정 일괄 해제
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            disabled={aiProofreadLoading}
+                            onClick={handleRegenerateAiMinimalSuggestions}
+                            className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md border-hairline border-primary bg-surface px-2.5 text-[11px] font-bold text-primary hover:bg-primary-subtle disabled:opacity-50"
+                          >
+                            {aiProofreadLoading ? "✨ AI 최소 교열 중..." : "✨ Claude 4.6 자연스러운 최소 교열"}
+                          </button>
+                        </>
+                      );
+                    })()}
                     {paragraphMode && !cleanFullView && (
                       <button
                         type="button"

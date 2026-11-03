@@ -821,6 +821,29 @@ export default function JobWorkspacePage() {
     });
   }
 
+  // 모드 1(최소 수정): 적용된 모든 교정 문장을 일괄 해제(원문 복원)
+  async function handleRevertAllSuggestions() {
+    let nextBody = body;
+    const nextSuggestions = sentenceSuggestions.map((s) => {
+      if (!s.selectedAlternativeId) return s;
+      const appliedAlt = s.alternatives.find(
+        (a) => a.id === s.selectedAlternativeId
+      );
+      if (appliedAlt && nextBody.includes(appliedAlt.text)) {
+        nextBody = nextBody.replace(appliedAlt.text, s.originalSentence);
+      }
+      return { ...s, selectedAlternativeId: null };
+    });
+
+    setBody(nextBody);
+    setSentenceSuggestions(nextSuggestions);
+    setActiveSuggestionId(null);
+    await handleSaveArticle({
+      body: nextBody,
+      sentenceSuggestions: nextSuggestions,
+    });
+  }
+
   // 모드 1: 취재 팩트 메모장에 자체 취재 내용(기업정보, 매출액 등)을 매경 문체로 다듬어 추가
   async function handleAddFactMemo() {
     const raw = newFactInput.trim();
@@ -2946,21 +2969,43 @@ export default function JobWorkspacePage() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-1.5">
-                      {effectiveMode === "minimal" && (
-                        <button
-                          type="button"
-                          onClick={handleApplyAllRecommendedSuggestions}
-                          className="inline-flex h-[28px] items-center rounded-md bg-[#F59E0B] px-3 text-[12px] font-bold text-[#1E293B] hover:opacity-90 whitespace-nowrap shrink-0"
-                        >
-                          ✓ 권장 교정 일괄 적용 (
-                          {
-                            sentenceSuggestions.filter((s) =>
-                              Boolean(s.selectedAlternativeId)
-                            ).length
-                          }
-                          /{sentenceSuggestions.length})
-                        </button>
-                      )}
+                      {effectiveMode === "minimal" && (() => {
+                        const appliedCount = sentenceSuggestions.filter((s) =>
+                          Boolean(s.selectedAlternativeId)
+                        ).length;
+                        const totalCount = sentenceSuggestions.length;
+                        const allApplied = totalCount > 0 && appliedCount === totalCount;
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void (allApplied
+                                  ? handleRevertAllSuggestions()
+                                  : handleApplyAllRecommendedSuggestions())
+                              }
+                              className={`inline-flex h-[28px] items-center rounded-md px-3 text-[12px] font-bold hover:opacity-90 whitespace-nowrap shrink-0 ${
+                                allApplied
+                                  ? "border-hairline border-reject bg-reject-bg text-reject"
+                                  : "bg-[#F59E0B] text-[#1E293B]"
+                              }`}
+                            >
+                              {allApplied
+                                ? `↩ 교정 일괄 해제 (${appliedCount}/${totalCount})`
+                                : `✓ 권장 교정 일괄 적용 (${appliedCount}/${totalCount})`}
+                            </button>
+                            {appliedCount > 0 && !allApplied && (
+                              <button
+                                type="button"
+                                onClick={() => void handleRevertAllSuggestions()}
+                                className="inline-flex h-[28px] items-center rounded-md border-hairline border-reject bg-surface px-2.5 text-[11px] font-bold text-reject hover:bg-reject-bg whitespace-nowrap shrink-0"
+                              >
+                                ↩ 교정 일괄 해제
+                              </button>
+                            )}
+                          </>
+                        );
+                      })()}
                       {paragraphMode && !cleanFullView && (
                         <Button
                           type="button"

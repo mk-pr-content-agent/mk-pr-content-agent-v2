@@ -662,98 +662,93 @@ export function generateSentenceProofreadSuggestions(
         return;
       }
 
-      // 4) 첫 문단 첫 문장(리드문): 보도자료 원문 리드문을 기사식 리드문으로 다듬는 교정 제안 제공
+      // 4) 첫 문단 첫 문장(리드문): 원문 길이를 늘리지 않고 불필요한 영문 병기·어미·어순만 자연스럽게 최소 교정
       if (paraIdx === 0 && sentIdx === 0) {
-        const cleanBase = sent.replace(/\.$/, "").trim();
-        const escapedComp = company.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-        const compSubjectMatch = new RegExp(
-          `^((?:[가-힣A-Za-z0-9·\\s]+전문기업\\s*)?${escapedComp}(?:은|는|이|가))\\s+(.+)$`
-        ).exec(cleanBase);
+        const cleanBase = sent
+          .replace(/"([^"]+)"/g, "“$1”")
+          .replace(/'([^']+)'/g, "‘$1’")
+          .replace(/\.$/, "")
+          .trim();
 
-        // 어순 재배치 및 매경 경제신문 리드문 문체로 확실히 다르게 변환
-        let opt1 = cleanBase;
-        let opt2 = cleanBase;
-        let opt3 = `${company}가 ${compressLeadForHeadline(sent, company)}에 본격적으로 나선다.`;
+        // 긴 영문 중복 병기((Worldwide Partner) 등)만 제거하고 짧은 약어((IOC) 등)는 보존
+        const trimmedEng = cleanBase
+          .replace(/\([A-Za-z\s,&·-]{6,}\)/g, "")
+          .replace(/국제올림픽위원회\(IOC\)의/g, "국제올림픽위원회(IOC)")
+          .replace(/\s+/g, " ")
+          .trim();
 
-        if (compSubjectMatch) {
-          const subj = compSubjectMatch[1]!;
-          const rest = compSubjectMatch[2]!
-            .replace(/\([A-Za-z\s,]+\)/g, "")
-            .replace(/\s+/g, " ")
-            .trim();
-
-          // 버전 1: 핵심 활동·목적어를 강조하고 서술부를 매경 리드문 어조로 전환
-          opt1 = `${subj} ${rest
-            .replace(/선보이며\s+/, "새롭게 출시하고 ")
-            .replace(/참여한다$/, "공식 참여하며 글로벌 현장 지원에 나선다")
-            .replace(/나선다$/, "본격 추진하며 시장 공략에 속도를 낸다")
-            .replace(/선보인다$/, "전격 공개하고 본격적인 보급에 나선다")
-            .replace(/개최한다고\s+밝혔다$/, "개최하고 현장 실무 교류를 확대한다")
-            .replace(/출시했다고\s+밝혔다$/, "출시하고 국내외 판로 확대에 나선다")
-            .replace(/밝혔다$/, "공식 발표하고 본격적인 운영에 들어간다")}`;
-          if (!opt1.endsWith(".") && !opt1.endsWith("다")) opt1 += "다.";
-          else if (!opt1.endsWith(".")) opt1 += ".";
-
-          // 버전 2: 시간/장소/배경 절을 앞으로 빼서 보도자료 원문과 문장 어순 자체를 다르게 재구성 (포털 중복 회피)
-          const timePlaceMatch = /^(\d{1,2}월\s*\d{1,2}일부터\s*[^‘'“"]+에서\s*열리는\s*[‘'“"][^’'”"]+[’'”"]에)\s+(.+)$/.exec(
-            rest
-          );
-          if (timePlaceMatch) {
-            opt2 = `${timePlaceMatch[1]} ${company}가 ${timePlaceMatch[2]
-              .replace(/참여한다$/, "참여해 대회 통신·기술 인프라를 지원한다")
-              .replace(/나선다$/, "나서며 글로벌 스포츠 마케팅을 강화한다")}.`;
-          } else if (rest.includes("선보이며")) {
-            const parts = rest.split(/선보이며\s*/);
-            opt2 = `${parts[1]?.replace(/에\s*나선다$/, "을 겨냥해") || "신규 시장 공략을 위해"} ${subj} ${parts[0]?.trim()}을(를) 본격 출시했다.`;
+        // 버전 1 (권장 · 최소 교정): 불필요한 영문 중복 표기 정리 및 깔끔한 스트레이트 종결
+        let opt1 = trimmedEng;
+        if (opt1 === cleanBase) {
+          if (/참여한다$/.test(opt1)) {
+            opt1 = opt1.replace(/참여한다$/, "나선다");
+          } else if (/나선다$/.test(opt1)) {
+            opt1 = opt1.replace(/시장\s*확대에\s*나선다$/, "시장을 공략한다").replace(/나선다$/, "역량을 집중한다");
+          } else if (/선보인다$/.test(opt1)) {
+            opt1 = opt1.replace(/선보인다$/, "출시한다");
+          } else if (/밝혔다$/.test(opt1)) {
+            opt1 = opt1.replace(/밝혔다$/, "전했다");
           } else {
-            opt2 = `최근 관련 업계의 관심이 높아지는 가운데 ${subj} ${rest
-              .replace(/\([^)]*\)/g, "")
-              .replace(/참여한다$/, "참여하며 대외 협력 보폭을 넓힌다")
-              .replace(/나선다$/, "본격 착수했다")
-              .replace(/밝혔다$/, "본격화한다")}.`;
+            opt1 = opt1.replace(/다$/, "다고 밝혔다");
           }
+        }
+        opt1 = `${opt1.replace(/\.$/, "")}.`;
+
+        // 버전 2 (어순 정돈 · 원문 단어 그대로 유지): 시기·장소·행사 구절과 주어 순서를 자연스럽게 교차
+        let opt2 = "";
+        const subjTimeMatch = /^([가-힣A-Za-z0-9㈜()\s]+?(?:은|는|이|가))\s+(\d{1,2}월\s*\d{1,2}일부터\s*[^‘'“"]+에서\s*열리는\s*[‘'“"][^’'”"]+[’'”"]에)\s+(.+)$/.exec(
+          trimmedEng
+        );
+        if (subjTimeMatch) {
+          opt2 = `${subjTimeMatch[2]} ${subjTimeMatch[1]} ${subjTimeMatch[3]}.`;
+        } else if (trimmedEng.includes("선보이며 ")) {
+          const [firstPart, secondPart] = trimmedEng.split(/선보이며\s+/);
+          opt2 = `${firstPart?.trim()}출시하고 ${secondPart?.trim()}.`;
         } else {
-          opt1 = `${cleanBase
-            .replace(/\([A-Za-z\s,]+\)/g, "")
-            .replace(/참여한다$/, "참여하며 공식 지원 활동을 펼친다")
-            .replace(/나선다$/, "본격 추진하며 시장 확대에 속도를 낸다")
-            .replace(/밝혔다$/, "공식 발표했다")}.`;
-          opt2 = `${company} 측은 ${cleanBase
-            .replace(/참여한다$/, "참여해 현장 기술 지원을 본격화한다고 밝혔다")
-            .replace(/나선다$/, "본격 착수한다고 전했다")}.`;
+          opt2 = `${trimmedEng
+            .replace(/^([가-힣A-Za-z0-9㈜()]+)(?:이|가)\s+/, "$1은(는) ")
+            .replace(/참여한다$/, "참여한다고 밝혔다")
+            .replace(/나선다$/, "나선다고 밝혔다")
+            .replace(/선보인다$/, "선보인다고 밝혔다")}.`;
+        }
+        if (opt2 === opt1) {
+          opt2 = `${trimmedEng.replace(/다$/, "다고 밝혔다")}.`;
         }
 
-        if (opt1 === sent) {
-          opt1 = `${cleanBase.replace(/다$/, "며 본격적인 사업 행보에 나선다")}.`;
-        }
-        if (opt2 === sent || opt2 === opt1) {
-          opt2 = `${company}는 ${compressLeadForHeadline(sent, company)}을(를) 통해 현장 접점과 사업 경쟁력을 동시에 높인다는 방침이다.`;
+        // 버전 3 (간결 단문형): 수식어를 덜어내고 핵심 서술어를 간결하게 정돈
+        let opt3 = `${trimmedEng
+          .replace(/고화질\s*그래픽과\s*정밀\s*센서\s*기술을\s*적용한\s*/g, "")
+          .replace(/무선\s*통신\s*분야\s*공식\s*파트너로\s*참여한다$/, "공식 파트너로 참여해 무선 통신 기술을 지원한다")
+          .replace(/중심으로\s*시장\s*확대에\s*나선다$/, "대상으로 보급을 확대한다")
+          .replace(/다고\s*밝혔다$/, "다")}.`;
+        if (opt3 === opt1 || opt3 === opt2) {
+          opt3 = `${trimmedEng.replace(/참여한다$/, "공식 후원사로 활동한다").replace(/나선다$/, "보급을 확대한다")}.`;
         }
 
         suggestions.push({
           id: `sug-${seq++}`,
           paraIdx,
           originalSentence: sent,
-          ruleBadge: "리드문 교열 · 네이버 중복 회피(E·J항목)",
+          ruleBadge: "리드문 최소 교정 · 가독성 정돈",
           reason:
-            "타 매체와 동일한 보도자료 첫 문장(리드) 어순을 매경 기사식 리드문으로 재구성해 포털 중복·유사 판정을 예방합니다.",
+            "원문 단어와 길이를 유지하면서 불필요한 영문 중복 표기와 서술 어미만 매경 스트레이트 기사체로 간결하게 다듬습니다.",
           alternatives: [
             {
               id: `alt-${seq}-1`,
-              label: "버전 1 (권장 · 매경 리드문 다듬기)",
-              toneBadge: "매경 리드문 표준",
+              label: "버전 1 (권장 · 원문 최소 다듬기)",
+              toneBadge: "최소 교정·원문 보존",
               text: opt1,
             },
             {
               id: `alt-${seq}-2`,
-              label: "버전 2 (어순 재배치 · 포털 중복 회피형)",
-              toneBadge: "어순 재구성·중복 회피",
+              label: "버전 2 (스트레이트 보도형 · 어순 정돈)",
+              toneBadge: "어순·어미 정돈",
               text: opt2,
             },
             {
               id: `alt-${seq}-3`,
-              label: "버전 3 (간결·핵심 팩트 압축형)",
-              toneBadge: "핵심 팩트 압축",
+              label: "버전 3 (간결 단문형)",
+              toneBadge: "군더더기 축약",
               text: opt3,
             },
           ],
@@ -762,68 +757,77 @@ export function generateSentenceProofreadSuggestions(
         return;
       }
 
-      // 5) 중간 문단 중 기술·특징 설명 문장 또는 인용구 어미 다듬기 (최소 3~4개의 교정 토글 보장)
+      // 5) 중간 문단 문장 최소 교정 (원문에 없는 사족 추가 금지, 단일 치환만 수행)
       if (
         suggestions.length < 5 &&
         ((paraIdx === 1 && sentIdx === 0) ||
           (paraIdx === 2 && sentIdx === 0) ||
-          /(?:관계자는|밝혔다|설계됐다|설계했다|특징이다|계획이다|예정이다|지원하고)/.test(sent))
+          /(?:관계자는|밝혔다|설계됐다|설계했다|특징이다|계획이다|예정이다|지원하고|도입된다)/.test(sent))
       ) {
-        const cleanBase = sent.replace(/\.$/, "").trim();
-        const withoutEngParens = cleanBase.replace(/\([A-Za-z0-9\s,&·-]+\)/g, "").replace(/\s+/g, " ").trim();
-        let alt1 = withoutEngParens;
-        let alt2 = withoutEngParens;
-        let alt3 = withoutEngParens;
-        let badge = "문체 다듬기 · 기사 가독성 개선";
+        const cleanBase = sent
+          .replace(/"([^"]+)"/g, "“$1”")
+          .replace(/'([^']+)'/g, "‘$1’")
+          .replace(/\.$/, "")
+          .trim();
+        const withoutLongEng = cleanBase
+          .replace(/\([A-Za-z0-9\s,&·-]{6,}\)/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        let alt1 = withoutLongEng;
+        let alt2 = withoutLongEng;
+        let alt3 = withoutLongEng;
+        let badge = "문체 최소 다듬기 · 가독성 개선";
         let reason =
-          "보도자료 특유의 나열식 문장과 영문 병기·홍보성 서술어를 매경 경제기사 문체로 간결하게 다듬습니다.";
+          "원문 의미를 해치지 않고 중복 영문 표기나 어색한 서술 어미만 간결하게 교정합니다.";
 
         if (/관계자는\s*[“"']/.test(sent)) {
           badge = "FMT-07 · 인용구 서술 어미 다변화";
           reason =
             "기사 내 '~밝혔다' 어미 반복을 피하고 인용문 전달력을 높이기 위한 대안 문장입니다.";
-          alt1 = cleanBase.replace(/밝혔다$/, "전했다").replace(/말했다$/, "설명했다") + ".";
-          alt2 = cleanBase.replace(/밝혔다$/, "강조했다").replace(/전했다$/, "밝혔다") + ".";
-          alt3 = cleanBase.replace(/이라며\s+/, "이라면서 ").replace(/(?:밝혔다|말했다|전했다)$/, "덧붙였다") + ".";
+          alt1 = `${cleanBase.replace(/밝혔다$/, "전했다").replace(/말했다$/, "설명했다")}.`;
+          alt2 = `${cleanBase.replace(/밝혔다$/, "강조했다").replace(/전했다$/, "밝혔다")}.`;
+          alt3 = `${cleanBase.replace(/이라며\s+/, "이라면서 ").replace(/(?:밝혔다|말했다|전했다)$/, "덧붙였다")}.`;
         } else {
-          // 원문과 확실히 구분되도록 불필요한 영문 괄호 제거 + 복문 구조 정돈 + 서술어 기사체 변환
-          alt1 =
-            withoutEngParens
-              .replace(/활용해\s+/, "기반으로 ")
-              .replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "다채로운 현장 체험·지원 프로그램을 운영한다")
-              .replace(/선보일\s+계획이다$/, "순차적으로 공개하며 현장 접점을 넓힌다")
-              .replace(/설계됐다$/, "설계해 현장 설치와 운영 효율성을 높였다")
-              .replace(/설계했다$/, "구현해 실사용 편의성을 강화했다")
-              .replace(/간소화했다$/, "대폭 간소화해 도입 장벽을 낮췄다")
-              .replace(/특징이다$/, "핵심 차별화 요소로 꼽힌다")
-              .replace(/마련됐다$/, "체계적으로 구축됐다") + ".";
-          if (alt1 === `${withoutEngParens}.`) {
-            alt1 = `${withoutEngParens.replace(/다$/, "며 현장 활용도를 한층 높였다")}.`;
-          }
-
-          // 버전 2: 앞뒤 절 순서를 바꾸거나 핵심 목적을 앞세운 정통 경제기사 문체
-          if (withoutEngParens.includes("지원하고,")) {
-            const [firstClause, secondClause] = withoutEngParens.split(/지원하고,\s*/);
-            alt2 = `${secondClause?.replace(/선보일\s+계획이다$/, "운영하는 한편") || "현장 프로그램을 운영하는 동시에"} ${firstClause?.trim()} 지원도 함께 진행한다.`;
+          // 버전 1: 사족을 덧붙이지 않고 어미와 중복 표현만 1:1 최소 교정
+          if (/다양한\s+활동을\s+선보일\s+계획이다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng.replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "다양한 활동을 선보일 예정이다")}.`;
+          } else if (/선보일\s+계획이다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng.replace(/선보일\s+계획이다$/, "선보일 예정이다")}.`;
+          } else if (/최초로\s+도입된다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng.replace(/^특히\s+/, "").replace(/최초로\s+도입된다$/, "처음 도입된다")}.`;
+          } else if (/설계됐다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng.replace(/설계됐다$/, "구현됐다")}.`;
+          } else if (/설계했다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng.replace(/설계했다$/, "구성했다")}.`;
+          } else if (/간소화했다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng.replace(/간소화했다$/, "줄였다")}.`;
+          } else if (withoutLongEng !== cleanBase) {
+            alt1 = `${withoutLongEng}.`;
           } else {
-            alt2 =
-              withoutEngParens
-                .replace(/^이번\s+/, "새롭게 도입된 ")
-                .replace(/^특히\s+/, "여기에 ")
-                .replace(/계획이다$/, "방침이어서 현장 활용도가 높아질 전망이다")
-                .replace(/다$/, "다는 점에서 업계의 주목을 받고 있다") + ".";
+            alt1 = `${withoutLongEng.replace(/활용해\s+/, "통해 ").replace(/계획이다$/, "예정이다").replace(/특징이다$/, "강점이다")}.`;
           }
 
-          // 버전 3: 수식어와 중복 구절을 덜어낸 핵심 요약형 문장
-          alt3 =
-            compressKoreanClauseKeepingEnding(
-              withoutEngParens.replace(/다양한\s+|특히\s+|이번\s+/g, ""),
-              Math.max(42, Array.from(withoutEngParens).length - 14)
-            )
-              .replace(/선보일\s+계획이다$/, "전개한다")
-              .replace(/\.$/, "") + ".";
-          if (alt3 === `${withoutEngParens}.`) {
-            alt3 = `${withoutEngParens.replace(/다$/, "는 구상이다")}.`;
+          // 버전 2: 현재형 간결 서술어로 정리 (사족 추가 없음)
+          alt2 = `${withoutLongEng
+            .replace(/활용해\s+/, "통해 ")
+            .replace(/선보일\s+계획이다$/, "선보인다")
+            .replace(/최초로\s+도입된다$/, "처음 적용된다")
+            .replace(/설계됐다$/, "제작됐다")
+            .replace(/설계했다$/, "마련했다")
+            .replace(/간소화했다$/, "간편화했다")}.`;
+          if (alt2 === alt1) {
+            alt2 = `${withoutLongEng.replace(/^특히\s+/, "").replace(/다$/, "는 설명이다")}.`;
+          }
+
+          // 버전 3: 불필요한 부사어('특히', '다양한')를 덜어낸 담백한 문장
+          alt3 = `${withoutLongEng
+            .replace(/^특히\s+/, "")
+            .replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "체험·지원 프로그램을 운영한다")
+            .replace(/최초로\s+도입된다$/, "처음으로 운영된다")
+            .replace(/방식으로\s+설계해\s+/, "방식을 적용해 ")}.`;
+          if (alt3 === alt1 || alt3 === alt2) {
+            alt3 = `${withoutLongEng.replace(/^이번\s+/, "").replace(/다$/, "게 된다")}.`;
           }
         }
 
@@ -837,19 +841,19 @@ export function generateSentenceProofreadSuggestions(
             {
               id: `alt-${seq}-1`,
               label: "버전 1 (권장 · 최소 다듬기)",
-              toneBadge: "최소 다듬기",
+              toneBadge: "최소 교정·원문 보존",
               text: alt1,
             },
             {
               id: `alt-${seq}-2`,
-              label: "버전 2 (매경 객관 보도 문체)",
-              toneBadge: "정통 경제기사 톤",
+              label: "버전 2 (간결 현재형 서술)",
+              toneBadge: "간결 스트레이트",
               text: alt2,
             },
             {
               id: `alt-${seq}-3`,
-              label: "버전 3 (간결·핵심 요약형)",
-              toneBadge: "간결·핵심형",
+              label: "버전 3 (군더더기 축약형)",
+              toneBadge: "수식어 정돈",
               text: alt3,
             },
           ],

@@ -8,9 +8,14 @@ import { sources, type SourceRecord } from "@/db/schema";
 const PERPLEXITY_CHAT_ENDPOINT = "https://api.perplexity.ai/chat/completions";
 const PERPLEXITY_RESPONSES_ENDPOINT = "https://api.perplexity.ai/v1/responses";
 
-export const DEFAULT_PERPLEXITY_MODEL = "openai/gpt-5.6-sol";
+export const DEFAULT_PERPLEXITY_MODEL = "anthropic/claude-sonnet-4-6";
 
 export type PerplexityModel =
+  | "anthropic/claude-sonnet-4-6"
+  | "anthropic/claude-sonnet-4-5"
+  | "anthropic/claude-haiku-4-5"
+  | "openai/gpt-5.4"
+  | "openai/gpt-5.1"
   | "openai/gpt-5.6-sol"
   | "sonar"
   | "sonar-pro"
@@ -285,8 +290,11 @@ function buildResponsesRequestBody(
     model,
     input: inputText,
     max_output_tokens: options.maxOutputTokens ?? 4000,
-    reasoning: { effort: "low" },
   };
+
+  if (model.startsWith("openai/")) {
+    body.reasoning = { effort: "low" };
+  }
 
   if (sysMessages.length > 0) {
     body.instructions = sysMessages.join("\n\n");

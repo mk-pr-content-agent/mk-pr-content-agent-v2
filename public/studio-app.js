@@ -92,7 +92,6 @@ function convertRawNoteToMkStyleClient(rawNote, compName) {
 
 function buildClientSentenceSuggestions(rawText, compName) {
   const cleanRaw = (rawText || "").replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
-  const cName = (compName || "대상 기업").trim();
   const paras = cleanRaw
     .split(/\n{2,}|\r?\n/)
     .map((p) => p.trim())
@@ -108,7 +107,7 @@ function buildClientSentenceSuggestions(rawText, compName) {
     sents.forEach((sent) => {
       if (suggestions.length >= 6) return;
       const hasSuperlative =
-        /세계\s*최초|국내\s*최초|업계\s*최초|업계\s*1위|국내\s*1위|독보적인|최고의/.test(
+        /세계\s*최초|국내\s*최초|업계\s*최초|청소년올림픽\s*최초|최초로|업계\s*1위|국내\s*1위|독보적인|최고의/.test(
           sent
         );
       const hasPyeong = /\d+(?:\.\d+)?\s*평(?!\s*\()/.test(sent);
@@ -120,16 +119,16 @@ function buildClientSentenceSuggestions(rawText, compName) {
         suggestions.filter((x) => x.paragraphIndex === pIdx).length === 0;
       if (!isTarget) return;
 
-      // 1) 기본 규정 위반(최상급, 평->㎡, 따옴표, 경어체, 불필요한 영문 병기 괄호) 정돈
+      // 1) 기본 규정 위반(최상급, 평->㎡, 따옴표, 경어체) 정돈 및 불필요한 긴 영문 병기((Worldwide Partner) 등)만 제거 (IOC 등 짧은 약어는 보존)
       const cleanBase = sent
         .replace(/"([^"]+)"/g, "“$1”")
         .replace(/'([^']+)'/g, "‘$1’")
-        .replace(/\([A-Za-z0-9\s,&·-]{3,}\)/g, "")
-        .replace(/세계\s*최초로?/g, "독자 기술을 적용해")
-        .replace(/국내\s*최초로?/g, "자체 개발을 통해")
+        .replace(/세계\s*최초로?/g, "독자 기술로")
+        .replace(/국내\s*최초로?/g, "자체 기술로")
         .replace(/업계\s*최초로?/g, "선도적으로")
+        .replace(/최초로\s+도입된다/g, "처음 도입된다")
         .replace(/독보적인/g, "차별화된")
-        .replace(/최고의/g, "높은 수준의")
+        .replace(/최고의/g, "우수한")
         .replace(/자랑합니다\.?/g, "갖췄다.")
         .replace(/합니다\.?/g, "한다.")
         .replace(/입니다\.?/g, "이다.")
@@ -141,101 +140,108 @@ function buildClientSentenceSuggestions(rawText, compName) {
         .replace(/\.$/, "")
         .trim();
 
+      const trimmedEng = cleanBase
+        .replace(/\([A-Za-z0-9\s,&·-]{6,}\)/g, "")
+        .replace(/국제올림픽위원회\(IOC\)의/g, "국제올림픽위원회(IOC)")
+        .replace(/\s+/g, " ")
+        .trim();
+
       let v1 = "";
       let v2 = "";
       let v3 = "";
 
       if (isLead) {
-        // 리드문: 원문과 확실히 구분되도록 어순·서술부 재구성
-        v1 =
-          cleanBase
-            .replace(/선보이며\s+/, "새롭게 출시하고 ")
-            .replace(/참여한다$/, "공식 참여하며 글로벌 현장 기술 지원에 나선다")
-            .replace(/나선다$/, "본격 추진하며 시장 공략에 속도를 낸다")
-            .replace(/선보인다$/, "전격 공개하고 본격적인 보급에 나선다")
-            .replace(/개최한다고\s+밝혔다$/, "개최하고 현장 실무 교류를 확대한다")
-            .replace(/출시했다고\s+밝혔다$/, "출시하고 국내외 판로 확대에 나선다")
-            .replace(/밝혔다$/, "공식 발표하고 본격적인 운영에 들어간다") + ".";
-        if (v1 === `${cleanBase}.`) {
-          v1 = `${cleanBase.replace(/다$/, "며 본격적인 사업 행보에 나선다")}.`;
+        // 1단계 최소 수정 원칙: 원문에 없는 상투어('시장 공략에 속도를 낸다' 등)를 덧붙이지 않고, 중복 영문 표기와 서술 어미만 간결히 정돈
+        v1 = trimmedEng;
+        if (v1 === cleanBase) {
+          if (/참여한다$/.test(v1)) {
+            v1 = v1.replace(/참여한다$/, "나선다");
+          } else if (/시장\s*확대에\s*나선다$/.test(v1)) {
+            v1 = v1.replace(/시장\s*확대에\s*나선다$/, "시장을 공략한다");
+          } else if (/선보인다$/.test(v1)) {
+            v1 = v1.replace(/선보인다$/, "출시한다");
+          } else if (/밝혔다$/.test(v1)) {
+            v1 = v1.replace(/밝혔다$/, "전했다");
+          } else {
+            v1 = v1.replace(/다$/, "다고 밝혔다");
+          }
         }
+        v1 = `${v1.replace(/\.$/, "")}.`;
 
-        // 버전 2: 시간/장소/목적 절을 앞으로 배치하여 보도자료 원문과 문장 구조(어순) 자체를 변경
-        const timePlaceMatch = /^([가-힣A-Za-z0-9·()\s]+?(?:은|는|이|가))\s+(\d{1,2}월\s*\d{1,2}일부터\s*[^‘'“"]+에서\s*열리는\s*[‘'“"][^’'”"]+[’'”"]에)\s+(.+)$/.exec(
-          cleanBase
+        // 버전 2: 원문 단어 그대로 시기·장소·행사 구절과 주어 어순만 자연스럽게 교차하거나 객관 보도 어미 적용
+        const subjTimeMatch = /^([가-힣A-Za-z0-9㈜()\s]+?(?:은|는|이|가))\s+(\d{1,2}월\s*\d{1,2}일부터\s*[^‘'“"]+에서\s*열리는\s*[‘'“"][^’'”"]+[’'”"]에)\s+(.+)$/.exec(
+          trimmedEng
         );
-        if (timePlaceMatch) {
-          v2 = `${timePlaceMatch[2]} ${cName}가 ${timePlaceMatch[3]
-            .replace(/참여한다$/, "참여해 대회 통신·기술 인프라를 전면 지원한다")
-            .replace(/나선다$/, "나서며 글로벌 스포츠 파트너십을 강화한다")}.`;
-        } else if (cleanBase.includes("선보이며")) {
-          const parts = cleanBase.split(/선보이며\s*/);
-          v2 = `${parts[1]?.replace(/에\s*나선다$/, "을 겨냥해") || "신규 수요처 확대를 위해"} ${parts[0]?.trim()}을(를) 본격 출시했다.`;
+        if (subjTimeMatch) {
+          v2 = `${subjTimeMatch[2]} ${subjTimeMatch[1]} ${subjTimeMatch[3]}.`;
+        } else if (trimmedEng.includes("선보이며 ")) {
+          const [firstPart, secondPart] = trimmedEng.split(/선보이며\s+/);
+          v2 = `${firstPart?.trim()} 출시하고 ${secondPart?.trim()}.`;
         } else {
-          v2 = `관련 업계의 관심이 모이는 가운데 ${cleanBase
-            .replace(/참여한다$/, "참여하며 대외 협력 보폭을 넓힌다")
-            .replace(/나선다$/, "본격 착수하며 시장 내 입지를 강화한다")
-            .replace(/밝혔다$/, "본격화하며 현장 보급을 확대한다")}.`;
+          v2 = `${trimmedEng
+            .replace(/참여한다$/, "참여한다고 밝혔다")
+            .replace(/나선다$/, "나선다고 밝혔다")
+            .replace(/선보인다$/, "선보인다고 밝혔다")}.`;
+        }
+        if (v2 === v1) {
+          v2 = `${trimmedEng.replace(/다$/, "다고 밝혔다")}.`;
         }
 
-        // 버전 3: 수식어를 덜어낸 간결 핵심 팩트 문장
-        v3 =
-          cleanBase
-            .replace(/고화질\s*그래픽과\s*정밀\s*센서\s*기술을\s*적용한\s*/g, "")
-            .replace(/국제올림픽위원회의\s*/g, "IOC ")
-            .replace(/참여한다$/, "공식 파트너로 활동한다")
-            .replace(/시장\s*확대에\s*나선다$/, "보급을 본격화한다")
-            .replace(/다고\s*밝혔다$/, "다") + ".";
-        if (v3 === `${cleanBase}.` || v3 === v1) {
-          v3 = `${cName} 측은 핵심 사업 역량을 집중해 ${cleanBase.replace(/^[^은는이가]+[은는이가]\s*/, "").replace(/다$/, "는 방침이다")}.`;
+        // 버전 3: 수식어를 덜어낸 간결 단문형
+        v3 = `${trimmedEng
+          .replace(/고화질\s*그래픽과\s*정밀\s*센서\s*기술을\s*적용한\s*/g, "")
+          .replace(/무선\s*통신\s*분야\s*공식\s*파트너로\s*참여한다$/, "공식 파트너로 참여해 무선 통신 기술을 지원한다")
+          .replace(/중심으로\s*시장\s*확대에\s*나선다$/, "대상으로 보급을 확대한다")
+          .replace(/다고\s*밝혔다$/, "다")}.`;
+        if (v3 === v1 || v3 === v2) {
+          v3 = `${trimmedEng.replace(/참여한다$/, "공식 후원사로 활동한다").replace(/나선다$/, "보급을 확대한다")}.`;
         }
       } else {
-        // 본문 문단: 나열식 구조·홍보성 표현·어미를 매경 기사체로 확실히 변환
-        v1 =
-          cleanBase
-            .replace(/활용해\s+/, "기반으로 ")
-            .replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "다채로운 현장 체험·지원 프로그램을 운영한다")
-            .replace(/선보일\s+계획이다$/, "순차적으로 공개하며 현장 접점을 넓힌다")
-            .replace(/설계됐다$/, "설계해 현장 설치와 운영 효율성을 높였다")
-            .replace(/설계했다$/, "구현해 실사용 편의성을 강화했다")
-            .replace(/간소화했다$/, "대폭 간소화해 도입 장벽을 낮췄다")
-            .replace(/특징이다$/, "핵심 차별화 요소로 꼽힌다")
-            .replace(/밝혔다$/, "설명하며 향후 운영 계획을 구체화했다")
-            .replace(/이다$/, "으로 구성해 현장 활용도를 높였다") + ".";
-        if (v1 === `${cleanBase}.`) {
-          v1 = `${cleanBase.replace(/다$/, "며 현장 활용성과 완성도를 동시에 높였다")}.`;
-        }
-
-        // 버전 2: 앞뒤 절 순서를 교차하거나 매경 데스크 문체로 재구성
-        if (cleanBase.includes("지원하고,")) {
-          const [firstClause, secondClause] = cleanBase.split(/지원하고,\s*/);
-          v2 = `${secondClause?.replace(/선보일\s+계획이다$/, "운영하는 한편") || "현장 프로그램을 운영하는 동시에"} ${firstClause?.trim()} 지원도 함께 진행한다.`;
-        } else if (cleanBase.includes(", ")) {
-          const commaParts = cleanBase.split(", ");
-          if (commaParts.length === 2 && commaParts[0].length >= 10 && commaParts[1].length >= 10) {
-            v2 = `${commaParts[0]}함과 동시에 ${commaParts[1].replace(/다$/, "는 점에서 실무 활용도가 높다")}.`;
-          } else {
-            v2 = `특히 ${cleanBase.replace(/다$/, "는 점이 주요 특징으로 꼽힌다")}.`;
-          }
+        // 본문 문단: 사족 추가 없이 어미와 중복 표현만 1:1 최소 교정
+        if (/관계자는\s*[“"']/.test(sent)) {
+          v1 = `${cleanBase.replace(/밝혔다$/, "전했다").replace(/말했다$/, "설명했다")}.`;
+          v2 = `${cleanBase.replace(/밝혔다$/, "강조했다").replace(/전했다$/, "밝혔다")}.`;
+          v3 = `${cleanBase.replace(/이라며\s+/, "이라면서 ").replace(/(?:밝혔다|말했다|전했다)$/, "덧붙였다")}.`;
         } else {
-          v2 = `아울러 ${cleanBase
-            .replace(/^이번에\s*선보인\s*/, "")
-            .replace(/^특히\s*/, "")
-            .replace(/계획이다$/, "방침이어서 현장 도입 효과가 기대된다")
-            .replace(/다$/, "는 점에서 업계의 주목을 받고 있다")}.`;
-        }
+          if (/다양한\s+활동을\s+선보일\s+계획이다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng.replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "다양한 활동을 선보일 예정이다")}.`;
+          } else if (/선보일\s+계획이다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng.replace(/선보일\s+계획이다$/, "선보일 예정이다")}.`;
+          } else if (/처음\s+도입된다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng.replace(/^특히\s+/, "")}.`;
+          } else if (/설계됐다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng.replace(/설계됐다$/, "구현됐다")}.`;
+          } else if (/설계했다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng.replace(/설계했다$/, "구성했다")}.`;
+          } else if (/간소화했다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng.replace(/간소화했다$/, "줄였다")}.`;
+          } else if (trimmedEng !== cleanBase) {
+            v1 = `${trimmedEng}.`;
+          } else {
+            v1 = `${trimmedEng.replace(/활용해\s+/, "통해 ").replace(/계획이다$/, "예정이다").replace(/특징이다$/, "강점이다")}.`;
+          }
 
-        // 버전 3: 불필요한 수식어를 덜어낸 간결 팩트형
-        v3 =
-          cleanBase
-            .replace(/이번에\s*선보인\s*/g, "")
-            .replace(/특히\s*/g, "")
-            .replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "주요 프로그램을 전개한다")
-            .replace(/다양한\s*/g, "핵심 ")
-            .replace(/고\s*밝혔다$/, "는 설명이다")
-            .replace(/계획이다$/, "예정이다") + ".";
-        if (v3 === `${cleanBase}.` || v3 === v1) {
-          v3 = `${cleanBase.replace(/다$/, "는 구상이다")}.`;
+          // 버전 2: 현재형 간결 서술어로 정리 (사족 추가 없음)
+          v2 = `${trimmedEng
+            .replace(/활용해\s+/, "통해 ")
+            .replace(/선보일\s+계획이다$/, "선보인다")
+            .replace(/처음\s+도입된다$/, "처음 적용된다")
+            .replace(/설계됐다$/, "제작됐다")
+            .replace(/설계했다$/, "마련했다")
+            .replace(/간소화했다$/, "간편화했다")}.`;
+          if (v2 === v1) {
+            v2 = `${trimmedEng.replace(/^특히\s+/, "").replace(/다$/, "는 설명이다")}.`;
+          }
+
+          // 버전 3: 불필요한 부사어('특히', '다양한')를 덜어낸 담백한 문장
+          v3 = `${trimmedEng
+            .replace(/^특히\s+/, "")
+            .replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "체험·지원 프로그램을 운영한다")
+            .replace(/처음\s+도입된다$/, "처음으로 운영된다")
+            .replace(/방식으로\s+설계해\s+/, "방식을 적용해 ")}.`;
+          if (v3 === v1 || v3 === v2) {
+            v3 = `${trimmedEng.replace(/^이번\s+/, "").replace(/다$/, "게 된다")}.`;
+          }
         }
       }
 
@@ -245,8 +251,8 @@ function buildClientSentenceSuggestions(rawText, compName) {
         : hasPyeong
         ? "매경 스타일북 기준 면적 제곱미터(㎡) 병기 교정"
         : isLead
-        ? "포털 중복 회피 및 매경 리드문 어순·서술어 재구성"
-        : "보도자료 나열식·홍보성 문장을 객관적 경제기사 문체로 교정";
+        ? "원문 의미·길이를 유지하며 중복 영문 표기 및 리드문 어미 최소 교정"
+        : "원문 의미를 해치지 않고 불필요한 중복 표기·서술 어미만 간결하게 교정";
 
       suggestions.push({
         id,
@@ -256,20 +262,20 @@ function buildClientSentenceSuggestions(rawText, compName) {
         alternatives: [
           {
             id: `${id}-alt-1`,
-            label: "버전 1 (권장 · 매경 기사체 교정)",
-            toneBadge: "규정 준수·기사체 정돈",
+            label: "버전 1 (권장 · 원문 최소 다듬기)",
+            toneBadge: "최소 교정·원문 보존",
             text: v1,
           },
           {
             id: `${id}-alt-2`,
-            label: "버전 2 (어순 재구성 · 중복 회피형)",
-            toneBadge: "어순 재배치·포털 대응",
+            label: "버전 2 (스트레이트 기사체 · 어미 정돈)",
+            toneBadge: "간결 스트레이트",
             text: v2,
           },
           {
             id: `${id}-alt-3`,
-            label: "버전 3 (간결·핵심 팩트 압축형)",
-            toneBadge: "수식어 축약·팩트 중심",
+            label: "버전 3 (군더더기 축약형)",
+            toneBadge: "수식어 정돈",
             text: v3,
           },
         ],
@@ -549,23 +555,76 @@ function buildClientFallbackDraft(compName, mode, rawText) {
   };
 }
 
+const AVAILABLE_AI_MODELS = [
+  {
+    id: "anthropic/claude-sonnet-4-6",
+    name: "Claude Sonnet 4.6 (1순위 추천 · 한국어 문장력·교열 최고)",
+    shortName: "Claude Sonnet 4.6",
+    desc: "조사·어미 흐름이 가장 자연스럽고 번역투나 억지 수식어 없이 깔끔한 매경 기사체를 구현합니다.",
+  },
+  {
+    id: "anthropic/claude-sonnet-4-5",
+    name: "Claude Sonnet 4.5 (정통 스트레이트 기사 톤 안정적)",
+    shortName: "Claude Sonnet 4.5",
+    desc: "보도자료 원문 의미를 보존하면서 담백하고 건조한 경제지 문체로 다듬는 데 강합니다.",
+  },
+  {
+    id: "openai/gpt-5.4",
+    name: "OpenAI GPT-5.4 (팩트 구조화 · 제목·부제 추출 강점)",
+    shortName: "GPT-5.4",
+    desc: "핵심 수치·일정·고유명사 구조화 및 3종 제목 후보 도출에 강점이 있습니다.",
+  },
+  {
+    id: "openai/gpt-5.6-sol",
+    name: "OpenAI GPT-5.6-sol (웹 검색 · 경쟁사 비교분석 특화)",
+    shortName: "GPT-5.6-sol",
+    desc: "모드 3(비교·기획 기사)에서 실시간 경쟁사 웹 검색과 요약 결합 시 유용합니다.",
+  },
+  {
+    id: "anthropic/claude-haiku-4-5",
+    name: "Claude Haiku 4.5 (초고속 경량 문장 교열)",
+    shortName: "Claude Haiku 4.5",
+    desc: "빠른 속도로 간단한 어미·표기 교정을 수행할 때 적합합니다.",
+  },
+];
+
+function getSelectedAiModel() {
+  try {
+    const saved = localStorage.getItem("mk_pr_selected_ai_model");
+    if (saved && AVAILABLE_AI_MODELS.some((m) => m.id === saved)) {
+      return saved;
+    }
+  } catch {}
+  return "anthropic/claude-sonnet-4-6";
+}
+
+function setSelectedAiModelStorage(modelId) {
+  try {
+    localStorage.setItem("mk_pr_selected_ai_model", modelId);
+  } catch {}
+}
+
 async function callPerplexityResponsesApi({
   instructions,
   input,
   maxOutputTokens = 4000,
   useWebSearch = false,
+  modelOverride = null,
 }) {
   const apiKey = decodeDefaultKey().trim();
   if (!apiKey) {
     throw new Error("API 키가 설정되지 않았습니다.");
   }
 
+  const chosenModel = modelOverride || getSelectedAiModel();
   const body = {
-    model: "openai/gpt-5.6-sol",
+    model: chosenModel,
     input,
     max_output_tokens: maxOutputTokens,
-    reasoning: { effort: "low" },
   };
+  if (chosenModel.startsWith("openai/")) {
+    body.reasoning = { effort: "low" };
+  }
   if (instructions) body.instructions = instructions;
   if (useWebSearch) body.tools = [{ type: "web_search" }];
 
@@ -866,6 +925,7 @@ function deriveStageSummary(stage, outputJson) {
 function ApiUsageBar({ refreshTrigger }) {
   const [open, setOpen] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
+  const [selectedModel, setSelectedModel] = useState(() => getSelectedAiModel());
   const [testing, setTesting] = useState(false);
   const [feedback, setFeedback] = useState(null);
   const [summary, setSummary] = useState(() => getLocalUsageSummary());
@@ -874,11 +934,14 @@ function ApiUsageBar({ refreshTrigger }) {
 
   useEffect(() => {
     setSummary(getLocalUsageSummary());
+    setSelectedModel(getSelectedAiModel());
   }, [refreshTrigger, open]);
 
   const totalTokens = summary.totalTokens || 0;
   const totalUsd = summary.estimatedCostUsd || 0;
   const totalKrw = Math.round(totalUsd * 1380);
+  const activeModelMeta =
+    AVAILABLE_AI_MODELS.find((m) => m.id === selectedModel) || AVAILABLE_AI_MODELS[0];
 
   async function handleTest() {
     setTesting(true);
@@ -896,7 +959,7 @@ function ApiUsageBar({ refreshTrigger }) {
       setSummary(getLocalUsageSummary());
       setFeedback({
         type: "ok",
-        text: `연결 성공! (model: openai/gpt-5.6-sol · ${res.usage.totalTokens} 토큰 소모)`,
+        text: `연결 성공! (모델: ${activeModelMeta.shortName} · ${res.usage.totalTokens} 토큰 소모)`,
       });
     } catch (e) {
       setFeedback({
@@ -919,7 +982,7 @@ function ApiUsageBar({ refreshTrigger }) {
         className="inline-flex h-[32px] items-center gap-2 rounded-md border-hairline border-line bg-surface px-3 text-[12px] leading-[18px] text-ink hover:bg-surface-subtle transition-colors whitespace-nowrap"
       >
         <span className={`h-2 w-2 rounded-full ${hasKey ? "bg-pass" : "bg-hold"}`} />
-        <span className="font-medium">{hasKey ? "API 연결됨" : "API 키 설정"}</span>
+        <span className="font-semibold text-primary">{activeModelMeta.shortName}</span>
         <span className="text-line">|</span>
         <span>
           누적 <strong className="font-semibold text-ink">{totalTokens.toLocaleString()}</strong> 토큰 ·{" "}
@@ -930,10 +993,10 @@ function ApiUsageBar({ refreshTrigger }) {
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#1A1D21]/40 p-4">
-          <div className="w-[620px] max-w-full rounded-lg border-hairline border-line bg-surface p-6 space-y-4">
+          <div className="w-[660px] max-w-full rounded-lg border-hairline border-line bg-surface p-6 space-y-4">
             <div className="flex items-center justify-between border-b-hairline border-line pb-3">
               <h2 className="text-[16px] font-semibold text-ink">
-                Perplexity API 키 설정 및 토큰·크레딧 버닝 현황
+                AI 작성 모델 선택 및 API 키 · 토큰 버닝 현황
               </h2>
               <button
                 type="button"
@@ -944,17 +1007,61 @@ function ApiUsageBar({ refreshTrigger }) {
               </button>
             </div>
 
+            <div className="rounded-md border-hairline border-primary bg-primary-subtle/40 p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] font-bold text-primary">
+                  🤖 자연스러운 한국어 기사 작성용 AI 모델 선택 (추가 키 없이 즉시 전환)
+                </span>
+                <span className="rounded bg-primary px-2 py-0.5 text-[11px] font-bold text-surface">
+                  현재: {activeModelMeta.shortName}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {AVAILABLE_AI_MODELS.map((m) => {
+                  const isSel = selectedModel === m.id;
+                  return (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedModel(m.id);
+                        setSelectedAiModelStorage(m.id);
+                        setFeedback({
+                          type: "ok",
+                          text: `AI 작성 모델이 '${m.name}'(으)로 변경되었습니다.`,
+                        });
+                      }}
+                      className={`w-full text-left rounded-md border-hairline p-2.5 transition-colors ${
+                        isSel
+                          ? "border-primary bg-surface font-semibold text-ink"
+                          : "border-line bg-surface/60 text-ink-muted hover:text-ink"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between text-[12.5px]">
+                        <span className={isSel ? "text-primary font-bold" : "font-semibold"}>
+                          {isSel ? "● " : "○ "}
+                          {m.name}
+                        </span>
+                        <span className="font-mono text-[11px] text-ink-muted">{m.id}</span>
+                      </div>
+                      <p className="mt-0.5 text-[11.5px] text-ink-muted">{m.desc}</p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
             <div className="rounded-md border-hairline border-line bg-surface-subtle p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[13px] font-semibold text-ink">
-                  1. Perplexity API 연결 상태 (기본 키 내장됨)
+                  Perplexity Responses API 연결 상태 (기본 키 내장됨)
                 </span>
                 <span className="inline-flex items-center gap-1 rounded bg-pass-bg px-2 py-0.5 text-[12px] font-semibold text-pass">
                   ✓ 연결됨 ({masked})
                 </span>
               </div>
               <p className="text-[12px] text-ink-muted">
-                기본 Perplexity API 키(`openai/gpt-5.6-sol`)가 이미 적용되어 있어 별도 입력 없이 모든 브라우저에서 즉시 작동합니다. 다른 키로 변경하려면 아래에 입력하십시오.
+                기본 API 키가 이미 내장되어 있어 위 5개 모델(`Claude Sonnet 4.6`, `Claude Sonnet 4.5`, `GPT-5.4` 등)을 별도 설정 없이 바로 사용할 수 있습니다.
               </p>
               <div className="flex items-center gap-2">
                 <input
@@ -1002,7 +1109,7 @@ function ApiUsageBar({ refreshTrigger }) {
               <div className="flex items-center justify-between text-[12px]">
                 <span className="font-semibold text-ink">2. 실시간 토큰·크레딧 사용량</span>
                 <span className="font-medium text-primary">
-                  활성 모델: openai/gpt-5.6-sol (Perplexity /v1/responses)
+                  활성 모델: {activeModelMeta.id} (Perplexity /v1/responses)
                 </span>
               </div>
               <div className="grid grid-cols-3 gap-3">
@@ -1370,13 +1477,80 @@ function NewJobView({ onBack, onOpenGuide, onCreated }) {
       let parsed = null;
       let genSources = [];
 
-      if (mode !== "minimal") {
+      if (mode === "minimal") {
+        const targetSents = fallbackDraft.sentenceSuggestions || [];
+        const sentInputList = targetSents
+          .map((s, idx) => `${idx + 1}. [원문] ${s.originalSentence}`)
+          .join("\n");
+        const promptMinimalSys = [
+          "당신은 매일경제신문 편집국의 20년차 수석 교열·편집데스크 기자입니다.",
+          "현재 모드는 [모드 1: 기본 교정 · 최소 수정]입니다.",
+          "절대 원칙:",
+          "1. 원문 문장의 원래 의미와 길이를 그대로 유지하면서 어색한 번역투·과장 표현·중복 영문 병기만 최소한으로 간결하게 다듬으십시오.",
+          "2. 원문에 없는 상투적 수식어('글로벌 현장 기술 지원에 본격 추진하며', '시장 공략에 속도를 낸다', '업계의 이목이 집중된다' 등)를 절대 덧붙이지 마십시오. 문장이 원문보다 길어지면 안 됩니다.",
+          "3. 한 문장 안에 '~며, ~며' 또는 '~고, ~고' 같은 동일 연결어미가 중복되지 않도록 간결한 단문/복문으로 교정하십시오.",
+          "4. IOC, AI, ESG, B2B 등 필수 약어는 유지하고, 불필요하게 긴 영문 전체 병기만 정리하십시오.",
+          "5. 각 대상 문장마다 서로 다른 3가지 간결한 교정 버전(v1: 최소 다듬기·교열, v2: 간결한 스트레이트 어순, v3: 담백한 경제지 문체)과 32~42자 내외의 매경 스타일 제목 후보 3개(titleCandidates), 명사형 부제목 2줄(subtitleLines)을 JSON으로만 응답하십시오.",
+          '응답 JSON 형식: {"titleCandidates":["...","...","..."],"subtitleLines":["...","..."],"edits":[{"index":1,"reason":"간결한 교열 사유","v1":"...","v2":"...","v3":"..."}]}',
+        ].join("\n");
+
+        try {
+          const genRes = await callPerplexityResponsesApi({
+            instructions: promptMinimalSys,
+            input: `대상 기업명: ${compName}\n\n[교정 대상 문장 목록]\n${sentInputList}\n\n[보도자료 원문 참고]\n${rawText.slice(0, 2200)}`,
+            maxOutputTokens: 2800,
+            useWebSearch: false,
+          });
+          parsed = safeParseLlmJson(genRes.text);
+          if (parsed && Array.isArray(parsed.edits) && parsed.edits.length > 0) {
+            fallbackDraft.sentenceSuggestions = targetSents.map((item, idx) => {
+              const found =
+                parsed.edits.find((e) => Number(e.index) === idx + 1) ||
+                parsed.edits[idx];
+              if (!found) return item;
+              const v1 = (found.v1 || "").trim();
+              const v2 = (found.v2 || "").trim();
+              const v3 = (found.v3 || "").trim();
+              if (!v1 || v1 === item.originalSentence) return item;
+              return {
+                ...item,
+                reason: found.reason || item.reason,
+                alternatives: [
+                  {
+                    id: `${item.id}-alt-1`,
+                    label: "버전 1 (권장 · 최소 교열)",
+                    toneBadge: "원문 유지·간결 다듬기",
+                    text: v1,
+                  },
+                  {
+                    id: `${item.id}-alt-2`,
+                    label: "버전 2 (매경 스트레이트 톤)",
+                    toneBadge: "간결한 기사체",
+                    text: v2 && v2 !== v1 ? v2 : item.alternatives[1]?.text || v1,
+                  },
+                  {
+                    id: `${item.id}-alt-3`,
+                    label: "버전 3 (핵심 팩트 중심)",
+                    toneBadge: "군더더기 제거",
+                    text:
+                      v3 && v3 !== v1 && v3 !== v2
+                        ? v3
+                        : item.alternatives[2]?.text || v1,
+                  },
+                ],
+              };
+            });
+          }
+        } catch (apiErr) {
+          console.warn("Minimal LLM proofread fallback triggered:", apiErr);
+        }
+      } else {
         const promptSys = [
           "당신은 매일경제신문 PR사업팀의 베테랑 편집데스크 기자입니다.",
           mode === "comparative"
             ? "입력된 보도자료를 바탕으로 (1) 32~42자 내외의 매경 스타일 제목 후보 3개(titleCandidates), (2) 명사형 부제목 2줄(subtitleLines), (3) 국내 동종업계 실제 경쟁사·유사 브랜드 3곳의 이름과 자체 서술 요약(competitors: [{name, summary}]), (4) 문단별로 잘 구성된 5~6문단 분량(1,250~1,450자)의 비교·기획 기사 본문(body, 문단 간 \\n\\n 구분, 각 경쟁사 동향 및 대상 기업의 차별점 포함)을 JSON으로 작성하십시오."
             : "입력된 보도자료를 바탕으로 (1) 32~42자 내외의 매경 스타일 제목 후보 3개(titleCandidates), (2) 명사형 부제목 2줄(subtitleLines), (3) 문단별로 잘 구성된 4~5문단 분량(1,250~1,450자)의 기사 본문(body, 문단 간 \\n\\n 구분, 첫 문단 리드문 고정 및 중간 문단 재배치)을 JSON으로 작성하십시오.",
-          "엄격 규칙: 마크다운(**, ###)이나 인라인 출처번호([1]) 금지, 동일 서술 어미('~밝혔다') 3회 이상 반복 금지('~설명했다', '~전했다', '~강조했다'로 분산). JSON 문자열 내부의 인용문은 반드시 둥근 따옴표(‘...’, “...”)만 사용하여 JSON 구문 오류를 방지하십시오.",
+          "엄격 규칙: 마크다운(**, ###)이나 인라인 출처번호([1]) 금지, 동일 서술 어미('~밝혔다') 3회 이상 반복 금지('~설명했다', '~전했다', '~강조했다'로 분산). 한 문장 내 '~며, ~며' 중복 연결어미 금지. JSON 문자열 내부의 인용문은 반드시 둥근 따옴표(‘...’, “...”)만 사용하여 JSON 구문 오류를 방지하십시오.",
           '반드시 다음 JSON 구조로만 응답하십시오: {"titleCandidates":["...","...","..."],"subtitleLines":["...","..."],"body":"...","competitors":[{"name":"...","summary":"..."}],"diffs":[{"original":"...","replacement":"...","reason":"..."}]}',
         ].join("\n");
 
@@ -1756,9 +1930,24 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   const [saveFeedback, setSaveFeedback] = useState(null);
 
   // Mode 1 교정 문장 토글 & 취재 팩트 메모장 상태
-  const [sentenceSuggestions, setSentenceSuggestions] = useState(() =>
-    buildClientSentenceSuggestions(data.job?.raw_text || "", data.job?.company_name || "대상 기업")
-  );
+  const [sentenceSuggestions, setSentenceSuggestions] = useState(() => {
+    try {
+      const s6Rec = (data.stages || []).find((s) => s.stage === "S6");
+      const s6Parsed = s6Rec ? JSON.parse(s6Rec.output_json || "{}") : null;
+      if (
+        Array.isArray(s6Parsed?.sentenceSuggestions) &&
+        s6Parsed.sentenceSuggestions.length > 0 &&
+        !JSON.stringify(s6Parsed.sentenceSuggestions).includes("본격 추진하며 시장 공략에")
+      ) {
+        return s6Parsed.sentenceSuggestions;
+      }
+    } catch {}
+    return buildClientSentenceSuggestions(
+      data.job?.raw_text || "",
+      data.job?.company_name || "대상 기업"
+    );
+  });
+  const [aiProofreadLoading, setAiProofreadLoading] = useState(false);
   const [activeSuggestionId, setActiveSuggestionId] = useState(null);
   const [customAltText, setCustomAltText] = useState("");
   const [factMemos, setFactMemos] = useState(() =>
@@ -1890,6 +2079,92 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     });
     setBody(nextBody);
     setSentenceSuggestions(nextList);
+  }
+
+  async function handleRegenerateAiMinimalSuggestions() {
+    if (aiProofreadLoading) return;
+    setAiProofreadLoading(true);
+    try {
+      const compName = data.job?.company_name || "대상 기업";
+      const baseList = buildClientSentenceSuggestions(
+        data.job?.raw_text || "",
+        compName
+      );
+      const sentInputList = baseList
+        .map((s, idx) => `${idx + 1}. [원문] ${s.originalSentence}`)
+        .join("\n");
+      const promptMinimalSys = [
+        "당신은 매일경제신문 편집국의 20년차 수석 교열·편집데스크 기자입니다.",
+        "현재 모드는 [모드 1: 기본 교정 · 최소 수정]입니다.",
+        "절대 원칙:",
+        "1. 원문 문장의 원래 의미와 길이를 그대로 유지하면서 어색한 번역투·과장 표현·중복 영문 병기만 최소한으로 간결하게 다듬으십시오.",
+        "2. 원문에 없는 상투적 수식어('글로벌 현장 기술 지원에 본격 추진하며', '시장 공략에 속도를 낸다', '업계의 이목이 집중된다' 등)를 절대 덧붙이지 마십시오. 문장이 원문보다 길어지면 안 됩니다.",
+        "3. 한 문장 안에 '~며, ~며' 또는 '~고, ~고' 같은 동일 연결어미가 중복되지 않도록 간결한 단문/복문으로 교정하십시오.",
+        "4. IOC, AI, ESG, B2B 등 필수 약어는 유지하고, 불필요하게 긴 영문 전체 병기만 정리하십시오.",
+        "5. 각 대상 문장마다 서로 다른 3가지 간결한 교정 버전(v1: 최소 다듬기·교열, v2: 간결한 스트레이트 어순, v3: 담백한 경제지 문체)을 JSON으로만 응답하십시오.",
+        '응답 JSON 형식: {"edits":[{"index":1,"reason":"간결한 교열 사유","v1":"...","v2":"...","v3":"..."}]}',
+      ].join("\n");
+
+      const genRes = await callPerplexityResponsesApi({
+        instructions: promptMinimalSys,
+        input: `대상 기업명: ${compName}\n\n[교정 대상 문장 목록]\n${sentInputList}`,
+        maxOutputTokens: 2500,
+        useWebSearch: false,
+      });
+      const parsed = safeParseLlmJson(genRes.text);
+      if (parsed && Array.isArray(parsed.edits) && parsed.edits.length > 0) {
+        let nextBody = data.job?.raw_text || body;
+        const updatedList = baseList.map((item, idx) => {
+          const found =
+            parsed.edits.find((e) => Number(e.index) === idx + 1) ||
+            parsed.edits[idx];
+          if (!found) return item;
+          const v1 = (found.v1 || "").trim();
+          const v2 = (found.v2 || "").trim();
+          const v3 = (found.v3 || "").trim();
+          if (!v1 || v1 === item.originalSentence) return item;
+          if (nextBody.includes(item.originalSentence)) {
+            nextBody = nextBody.replace(item.originalSentence, v1);
+          }
+          return {
+            ...item,
+            reason: found.reason || item.reason,
+            selectedAltId: `${item.id}-alt-1`,
+            alternatives: [
+              {
+                id: `${item.id}-alt-1`,
+                label: "버전 1 (권장 · 최소 교열)",
+                toneBadge: "Claude 4.6 자연스러운 교열",
+                text: v1,
+              },
+              {
+                id: `${item.id}-alt-2`,
+                label: "버전 2 (매경 스트레이트 톤)",
+                toneBadge: "간결한 기사체",
+                text: v2 && v2 !== v1 ? v2 : item.alternatives[1]?.text || v1,
+              },
+              {
+                id: `${item.id}-alt-3`,
+                label: "버전 3 (핵심 팩트 중심)",
+                toneBadge: "군더더기 제거",
+                text:
+                  v3 && v3 !== v1 && v3 !== v2
+                    ? v3
+                    : item.alternatives[2]?.text || v1,
+              },
+            ],
+          };
+        });
+        setSentenceSuggestions(updatedList);
+        setBody(nextBody);
+        setSaveFeedback("Claude 4.6 최소 교열 문장이 반영되었습니다.");
+        setTimeout(() => setSaveFeedback(null), 3000);
+      }
+    } catch (err) {
+      console.warn("AI minimal regeneration failed:", err);
+    } finally {
+      setAiProofreadLoading(false);
+    }
   }
 
   function handleAddFactMemo() {
@@ -3092,13 +3367,23 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
 
                   <div className="flex flex-wrap items-center gap-1.5">
                     {effectiveMode === "minimal" && (
-                      <button
-                        type="button"
-                        onClick={handleApplyAllRecommendedSuggestions}
-                        className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md bg-[#F5B041] px-3 text-[12px] font-bold text-ink hover:opacity-90"
-                      >
-                        ✓ 권장 교정 일괄 적용 ({sentenceSuggestions.filter((s) => Boolean(s.selectedAltId)).length}/{sentenceSuggestions.length})
-                      </button>
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleApplyAllRecommendedSuggestions}
+                          className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md bg-[#F5B041] px-3 text-[12px] font-bold text-ink hover:opacity-90"
+                        >
+                          ✓ 권장 교정 일괄 적용 ({sentenceSuggestions.filter((s) => Boolean(s.selectedAltId)).length}/{sentenceSuggestions.length})
+                        </button>
+                        <button
+                          type="button"
+                          disabled={aiProofreadLoading}
+                          onClick={handleRegenerateAiMinimalSuggestions}
+                          className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md border-hairline border-primary bg-surface px-2.5 text-[11px] font-bold text-primary hover:bg-primary-subtle disabled:opacity-50"
+                        >
+                          {aiProofreadLoading ? "✨ AI 최소 교열 중..." : "✨ Claude 4.6 자연스러운 최소 교열"}
+                        </button>
+                      </>
                     )}
                     {paragraphMode && !cleanFullView && (
                       <button
@@ -3692,8 +3977,8 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                 <span className="inline-flex h-[22px] items-center whitespace-nowrap rounded bg-primary px-2 text-[11px] font-bold text-surface">
                   💬 AI 채팅으로 기사 수정
                 </span>
-                <span className="text-[10px] text-ink-muted whitespace-nowrap">
-                  openai/gpt-5.6-sol
+                <span className="text-[10px] font-semibold text-primary whitespace-nowrap">
+                  {AVAILABLE_AI_MODELS.find((m) => m.id === getSelectedAiModel())?.shortName || "Claude Sonnet 4.6"}
                 </span>
               </div>
               <p className="text-[11px] leading-[16px] text-ink-muted break-keep">

@@ -315,7 +315,7 @@ describe("Perplexity Client & Sources DB (M2)", () => {
     });
 
     expect(capturedUrl).toBe("https://api.perplexity.ai/v1/responses");
-    expect(capturedBody.model).toBe("openai/gpt-5.6-sol");
+    expect(capturedBody.model).toBe("anthropic/claude-sonnet-4-6");
     expect(capturedBody.max_output_tokens).toBe(300);
     expect(res.ok).toBe(true);
     expect(res.content).toContain("nassau.co.kr");

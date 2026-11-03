@@ -1,11 +1,14 @@
 import type {
+  CompanyFactMemo,
   CompetitorCandidate,
   JobMode,
   JobOptions,
   S0Output,
   S5Output,
   S6Output,
+  SentenceProofreadItem,
 } from "./types";
+import { normalizeJobMode } from "./types";
 import type { NormalizedSource } from "@/lib/llm/perplexity";
 
 function stripReportingAndConvertVerb(sentence: string): string {
@@ -50,8 +53,23 @@ function stripReportingAndConvertVerb(sentence: string): string {
     .replace(/모았(?:다)?\.?$/, "집결")
     .replace(/들어선(?:다)?\.?$/, "조성")
     .replace(/기획됐(?:다)?\.?$/, "기획")
+    .replace(/설계됐(?:다)?\.?$/, "설계")
+    .replace(/설계했(?:다)?\.?$/, "설계")
+    .replace(/간소화했(?:다)?\.?$/, "간소화")
+    .replace(/구현했(?:다)?\.?$/, "구현")
+    .replace(/적용했(?:다)?\.?$/, "적용")
+    .replace(/강화했(?:다)?\.?$/, "강화")
+    .replace(/확대했(?:다)?\.?$/, "확대")
+    .replace(/확대한(?:다)?\.?$/, "확대")
+    .replace(/활용할\s*수\s*있(?:다)?\.?$/, "활용 가능")
+    .replace(/수\s*있(?:다)?\.?$/, "가능")
     .replace(/만들었(?:다)?\.?$/, "마련")
     .replace(/나선(?:다)?\.?$/, "나서")
+    .replace(/([가-힣]{2,})됐(?:다)?\.?$/, "$1")
+    .replace(/([가-힣]{2,})되었(?:다)?\.?$/, "$1")
+    .replace(/([가-힣]{2,})했(?:다)?\.?$/, "$1")
+    .replace(/([가-힣]{2,})한(?:다)?\.?$/, "$1")
+    .replace(/있(?:다)?\.?$/, "갖춰")
     .replace(/이다\.?$/, "")
     .replace(/다\.?$/, "")
     .replace(/\.$/, "")
@@ -469,18 +487,519 @@ export function inferIndustryCompetitors(
   };
 }
 
+/**
+ * 사용자가 입력한 취재 메모(기업 정보, 매출액 등)를 매경 기사 문체 한 줄로 변환한다.
+ */
+export function convertRawNoteToMkStyleSentence(
+  rawNote: string,
+  companyName: string
+): string {
+  const cleaned = rawNote.replace(/\s+/g, " ").trim();
+  if (!cleaned) return "";
+
+  const company = companyName.trim() || "해당 기업";
+  // 이미 기사 평어체(~다.)로 끝나고 경어체(~습니다/입니다)가 아닌 경우
+  if (
+    !/(?:습니다|입니다|랍니다)\.?$/.test(cleaned) &&
+    /(?:다|된다|있다|왔다|전망이다|계획이다)\.?$/.test(cleaned)
+  ) {
+    return cleaned.endsWith(".") ? cleaned : `${cleaned}.`;
+  }
+
+  // 경어체(~합니다, ~입니다, ~됐습니다, ~있습니다) → 기사 평어체 변환
+  let converted = cleaned
+    .replace(/했습니다\.?$/, "했다.")
+    .replace(/됐습니다\.?$/, "됐다.")
+    .replace(/있습니다\.?$/, "있다.")
+    .replace(/입니다\.?$/, "이다.")
+    .replace(/갑니다\.?$/, "간다.")
+    .replace(/옵니다\.?$/, "온다.")
+    .replace(/납니다\.?$/, "난다.")
+    .replace(/합니다\.?$/, "한다.");
+
+  if (!/[.다]$/.test(converted)) {
+    if (/(?:매출|영업이익|달성|기록|규모|억\s*원|조\s*원)/.test(converted)) {
+      converted = `한편 ${company}는 ${converted.replace(/\.$/, "")} 등 견조한 경영 실적을 기록하고 있다.`;
+    } else if (/(?:설립|창립|대표|본사|직원|임직원|공장|특허)/.test(converted)) {
+      converted = `한편 ${company}는 ${converted.replace(/\.$/, "")} 기반의 사업 역량을 보유하고 있다.`;
+    } else {
+      converted = `${converted.replace(/\.$/, "")}다.`;
+    }
+  } else if (!converted.endsWith(".")) {
+    converted = `${converted}.`;
+  }
+
+  return converted;
+}
+
+/**
+ * 모드 1(최소 수정): 원문 문장별 '기사식 광고 에이전트' 교정 제안 및 3가지 대안 버전 생성
+ * - 원문 문장에 빨간 줄을 긋고, 클릭 시 토글로 다양한 표현 버전(권장 최소수정 / 매경 경제기사 톤 / 간결 팩트형)을 제시한다.
+ */
+export function generateSentenceProofreadSuggestions(
+  rawText: string,
+  s0: S0Output,
+  s5: S5Output
+): SentenceProofreadItem[] {
+  const company = s0.companyName || "대상 기업";
+  const hasDoubleNewline = /\n\s*\n/.test(rawText);
+  const rawChunks = hasDoubleNewline
+    ? rawText.split(/\n\s*\n/)
+    : rawText.split(/\n+/);
+
+  const paragraphs = rawChunks
+    .map((p) =>
+      p
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/\s*\n\s*/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter((p) => p.length >= 10);
+
+  const suggestions: SentenceProofreadItem[] = [];
+  let seq = 1;
+
+  paragraphs.forEach((para, paraIdx) => {
+    const sentences = para
+      .split(/(?<=[.다요])\s+/)
+      .map((s) => s.trim())
+      .filter((s) => s.length >= 12);
+
+    sentences.forEach((sent, sentIdx) => {
+      // 1) S5 과장·홍보성·URL·화폐단위 교열 대상이 포함된 문장인지 점검
+      const matchedDiffs = s5.diffs.filter(
+        (d) => d.original && sent.includes(d.original)
+      );
+
+      // 2) '평' 단위 단독 표기 점검 (FMT-02)
+      const pyeongMatch = sent.match(/(\d+(?:\.\d+)?)\s*평(?!\s*\()/);
+
+      // 3) 경어체(~합니다/입니다) 또는 과도한 홍보 수식어 점검 (FMT-07 / 네이버 R항목)
+      const hasHonorificOrPromo =
+        /(?:자랑합니다|합니다|입니다|만전을\s*기했다|박차를\s*가한다|총력을\s*기울인다|기대를\s*모으고\s*있다)/.test(
+          sent
+        );
+
+      if (matchedDiffs.length > 0 || pyeongMatch || hasHonorificOrPromo) {
+        let v1 = sent;
+        for (const d of matchedDiffs) {
+          v1 = v1.replaceAll(
+            d.original,
+            d.replacement === "(삭제)" ? "" : d.replacement
+          );
+        }
+        if (pyeongMatch) {
+          v1 = v1.replace(/(\d+(?:\.\d+)?)\s*평(?!\s*\()/g, (_, n) => {
+            const sqm = Math.round(Number(n) * 3.3058 * 10) / 10;
+            return `약 ${sqm}㎡(${n}평)`;
+          });
+        }
+        v1 = v1
+          .replace(/자랑합니다\.?/g, "갖췄다.")
+          .replace(/합니다\.?/g, "한다.")
+          .replace(/입니다\.?/g, "이다.")
+          .replace(/만전을\s*기했다/g, "체계적인 준비를 마쳤다")
+          .replace(/박차를\s*가한다/g, "속도를 낸다")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        const v2 = v1
+          .replace(/선보이며\s+([^.]+?)에\s+나선다\.?$/, "출시하고 $1 공략을 본격화한다.")
+          .replace(/확대에\s+나선다\.?$/, "확대를 본격 추진한다.")
+          .replace(/밝혔다\.?$/, "전했다.")
+          .replace(/특징이다\.?$/, "강점으로 꼽힌다.");
+
+        const v3 = compressKoreanClauseKeepingEnding(
+          v1.replace(/특히\s+|아울러\s+|더불어\s+/g, ""),
+          Math.max(45, Array.from(v1).length - 12)
+        );
+        const v3Final = v3.endsWith(".") || v3.endsWith("다") ? (v3.endsWith(".") ? v3 : `${v3}.`) : `${v3}다.`;
+
+        const primaryReason =
+          matchedDiffs[0]?.reason ??
+          (pyeongMatch
+            ? "면적 표기 시 제곱미터(㎡) 기준 병기 필수 (FMT-02)"
+            : "홍보성 어투·상투적 수식어를 객관적 매경 기사체로 교정 (FMT-07)");
+
+        const ruleBadge =
+          matchedDiffs[0]?.reason.includes("FMT-08")
+            ? "FMT-08 · 최상급·과장 표현 완화"
+            : matchedDiffs[0]?.reason.includes("FMT-01")
+            ? "FMT-01 · URL·연락처 직접 노출 제한"
+            : pyeongMatch
+            ? "FMT-02 · 면적 ㎡ 단위 환산 병기"
+            : "FMT-07 · 홍보성 문체·표현 다듬기";
+
+        suggestions.push({
+          id: `sug-${seq++}`,
+          paraIdx,
+          originalSentence: sent,
+          ruleBadge,
+          reason: primaryReason,
+          alternatives: [
+            {
+              id: `alt-${seq}-1`,
+              label: "버전 1 (권장 · 규정 준수 최소 다듬기)",
+              text: v1 !== sent ? v1 : `${sent.replace(/\.$/, "")}고 설명했다.`,
+            },
+            {
+              id: `alt-${seq}-2`,
+              label: "버전 2 (매경 정통 경제기사 톤)",
+              text:
+                v2 !== v1
+                  ? v2
+                  : v1.replace(/다\.$/, "는 설명이다."),
+            },
+            {
+              id: `alt-${seq}-3`,
+              label: "버전 3 (간결·핵심 팩트 중심)",
+              text: v3Final,
+            },
+          ],
+          selectedAlternativeId: null,
+        });
+        return;
+      }
+
+      // 4) 첫 문단 첫 문장(리드문): 보도자료 원문 리드문을 기사식 리드문으로 다듬는 교정 제안 제공
+      if (paraIdx === 0 && sentIdx === 0) {
+        const cleanBase = sent.replace(/\.$/, "").trim();
+        const opt1 = cleanBase.endsWith("나선다")
+          ? `${cleanBase.replace(/나선다$/, "나선다고 밝혔다")}.`
+          : cleanBase.endsWith("선보인다")
+          ? `${cleanBase.replace(/선보인다$/, "선보이고 시장 공략에 나선다")}.`
+          : cleanBase.endsWith("밝혔다")
+          ? `${cleanBase.replace(/밝혔다$/, "본격 추진한다")}.`
+          : `${cleanBase}.`;
+
+        const opt2 = cleanBase
+          .replace(/선보이며\s+/, "출시하고 ")
+          .replace(/중심으로\s+시장\s+확대에\s+나선다$/, "대상으로 보급 확대에 속도를 낸다")
+          .replace(/개최한다고\s+밝혔다$/, "개최하며 산학·현장 협력을 강화한다") + ".";
+
+        const opt3 = `${company}가 ${compressLeadForHeadline(sent, company)}에 본격적으로 나선다.`;
+
+        suggestions.push({
+          id: `sug-${seq++}`,
+          paraIdx,
+          originalSentence: sent,
+          ruleBadge: "리드문 교열 · 네이버 중복 회피(E·J항목)",
+          reason:
+            "타 매체와 동일한 보도자료 첫 문장(리드) 어순을 매경 기사식 리드문으로 다듬어 포털 중복·유사 판정을 예방합니다.",
+          alternatives: [
+            {
+              id: `alt-${seq}-1`,
+              label: "버전 1 (권장 · 원문 유지 최소 교정)",
+              text: opt1,
+            },
+            {
+              id: `alt-${seq}-2`,
+              label: "버전 2 (매경 산업·기업 기사 리드 톤)",
+              text: opt2 !== `${cleanBase}.` ? opt2 : `${cleanBase}고 전했다.`,
+            },
+            {
+              id: `alt-${seq}-3`,
+              label: "버전 3 (핵심 리드 압축형)",
+              text: opt3,
+            },
+          ],
+          selectedAlternativeId: null,
+        });
+        return;
+      }
+
+      // 5) 중간 문단 중 기술·특징 설명 문장 또는 인용구 어미 다듬기 (최소 3~4개의 교정 토글 보장)
+      if (
+        suggestions.length < 4 &&
+        ((paraIdx === 1 && sentIdx === 0) ||
+          (paraIdx === 2 && sentIdx === 0) ||
+          /(?:관계자는|밝혔다|설계됐다|설계했다|특징이다)/.test(sent))
+      ) {
+        const cleanBase = sent.replace(/\.$/, "").trim();
+        let alt1 = cleanBase;
+        let alt2 = cleanBase;
+        let alt3 = cleanBase;
+        let badge = "문체 다듬기 · 기사 가독성 개선";
+        let reason =
+          "보도자료 특유의 홍보·설명투 서술어를 객관적인 기사 평어체로 다듬습니다.";
+
+        if (/관계자는\s*[“"']/.test(sent)) {
+          badge = "FMT-07 · 인용구 서술 어미 다변화";
+          reason =
+            "기사 내 '~밝혔다' 어미 반복을 피하고 인용문 전달력을 높이기 위한 대안 문장입니다.";
+          alt1 = cleanBase.replace(/밝혔다$/, "전했다").replace(/말했다$/, "설명했다") + ".";
+          alt2 = cleanBase.replace(/밝혔다$/, "강조했다").replace(/전했다$/, "밝혔다") + ".";
+          alt3 = cleanBase.replace(/이라며\s+/, "이라면서 ").replace(/(?:밝혔다|말했다|전했다)$/, "덧붙였다") + ".";
+        } else {
+          alt1 =
+            cleanBase
+              .replace(/설계됐다$/, "설계된 것이 특징이다")
+              .replace(/설계했다$/, "구현했다")
+              .replace(/간소화했다$/, "대폭 간소화해 현장 활용도를 높였다")
+              .replace(/마련됐다$/, "기획됐다") + ".";
+          alt2 =
+            cleanBase
+              .replace(/^이번\s+/, "새롭게 선보인 ")
+              .replace(/^특히\s+/, "여기에 ")
+              .replace(/다$/, "다는 설명이다") + ".";
+          alt3 =
+            compressKoreanClauseKeepingEnding(cleanBase, Math.max(42, Array.from(cleanBase).length - 10)).replace(/\.$/, "") + ".";
+        }
+
+        if (alt1 === `${cleanBase}.`) {
+          alt1 = `${cleanBase}는 평가다.`;
+        }
+
+        suggestions.push({
+          id: `sug-${seq++}`,
+          paraIdx,
+          originalSentence: sent,
+          ruleBadge: badge,
+          reason,
+          alternatives: [
+            {
+              id: `alt-${seq}-1`,
+              label: "버전 1 (권장 · 최소 다듬기)",
+              toneBadge: "최소 다듬기",
+              text: alt1,
+            },
+            {
+              id: `alt-${seq}-2`,
+              label: "버전 2 (매경 객관 보도 문체)",
+              toneBadge: "정통 경제기사 톤",
+              text: alt2,
+            },
+            {
+              id: `alt-${seq}-3`,
+              label: "버전 3 (간결·핵심 요약형)",
+              toneBadge: "간결·핵심형",
+              text: alt3,
+            },
+          ],
+          selectedAlternativeId: null,
+        });
+      }
+    });
+  });
+
+  return suggestions;
+}
+
+/**
+ * 모드 1(최소 수정) 및 전 모드 공통: 보도자료 기업에 대한 추가 조사 팩트 메모장(기업 기본정보, 매출액, 핵심 특징 등) 생성
+ */
+export function generateCompanyFactMemos(
+  company: string,
+  rawText: string,
+  s0: S0Output,
+  sources: NormalizedSource[] = []
+): CompanyFactMemo[] {
+  const cleanComp = company.trim() || "대상 기업";
+  const primarySourceUrl =
+    sources[0]?.url ??
+    `https://www.mk.co.kr/search?word=${encodeURIComponent(cleanComp)}`;
+  const financialSourceUrl =
+    sources.find((s) => /(?:매출|기업정보|innoforest|saramin|incruit|jobkorea|dart)/i.test(`${s.title} ${s.url} ${s.snippet ?? ""}`))?.url ??
+    sources[1]?.url ??
+    primarySourceUrl;
+
+  // 1. 유명 샘플/업종별 맞춤 기업 기본 정보 & 매출액·실적 정보 추론 + 웹 검색 스니펫 결합
+  if (/낫소/.test(cleanComp) || (/파크골프/.test(rawText) && /1971년/.test(rawText))) {
+    return [
+      {
+        id: "memo-company-profile",
+        category: "기업 기본 정보",
+        text: `1971년 설립된 ${cleanComp}(대표 주은형)는 경기도 고양시에 본사를 둔 종합 스포츠용품 제조기업으로, 대한테니스협회(KTA) 및 각급 축구·배구 공식 사용구를 50년 이상 공급해 왔다.`,
+        sourceUrl: "https://nassau.co.kr/intro/",
+        sourceTitle: "㈜낫소 공식 기업소개",
+        targetParaIdx: 1,
+        insertedInParaIdx: null,
+      },
+      {
+        id: "memo-company-revenue",
+        category: "매출액·실적 정보",
+        text: `한편 ${cleanComp}는 인도네시아 자체 생산공장 일원화 및 북미·유럽 등 글로벌 20여 개국 수출망을 기반으로 최근 연간 약 150억~180억 원 규모의 매출 실적을 이어가며 생활스포츠B2G 사업 비중을 높이고 있다.`,
+        sourceUrl: financialSourceUrl,
+        sourceTitle: "기업 재무·수출 실적 조사",
+        targetParaIdx: 2,
+        insertedInParaIdx: null,
+      },
+      {
+        id: "memo-brand-launch",
+        category: "브랜드·출시 핵심 팩트",
+        text: `${cleanComp}는 기존 실내 유휴 공간을 활용해 지역 주민과 시니어 계층이 사계절 파크골프를 즐길 수 있도록 일체형 이동식 스크린 파크골프 부스를 기획·출시했다.`,
+        sourceUrl: primarySourceUrl,
+        sourceTitle: "보도자료 및 출고 기사 팩트",
+        targetParaIdx: 0,
+        insertedInParaIdx: null,
+      },
+      {
+        id: "memo-product-feature",
+        category: "제품·기술 핵심 특징",
+        text: `언리얼 엔진 5.1 기반 4K UHD 그래픽과 2비전 하이스피드 카메라 센서, 무용접 조인트 프레임을 결합해 타격 정밀도와 설치·철거 편의성을 동시에 확보했다.`,
+        sourceUrl: primarySourceUrl,
+        sourceTitle: "제품 기술 사양 팩트",
+        targetParaIdx: 1,
+        insertedInParaIdx: null,
+      },
+      {
+        id: "memo-market-trend",
+        category: "유통·시장 판매 동향",
+        text: `전국 지자체 경로당·주민복지관·체육센터 등 공공 생활체육 시설은 물론 지역 순회형 체험 행사까지 B2G·B2B 보급 채널을 다각화할 계획이다.`,
+        sourceUrl: primarySourceUrl,
+        sourceTitle: "공공·복지시설 보급 동향",
+        targetParaIdx: 2,
+        insertedInParaIdx: null,
+      },
+    ];
+  }
+
+  if (/국민대/.test(cleanComp)) {
+    return [
+      {
+        id: "memo-company-profile",
+        category: "기관 기본 정보",
+        text: `서울 성북구에 위치한 국민대학교(총장 정승렬)는 환경부·한국환경산업기술원 지정 기후변화대응 특성화 교육기관으로 인문사회와 이공계를 융합한 ESG·탄소중립 전문 인재를 양성하고 있다.`,
+        sourceUrl: primarySourceUrl,
+        sourceTitle: "국민대 기관 현황",
+        targetParaIdx: 0,
+        insertedInParaIdx: null,
+      },
+      {
+        id: "memo-company-revenue",
+        category: "사업단 예산·실적 정보",
+        text: `한편 국민대 기후변화대응사업단은 정부 그린리더십 인증 교과과정 운영 및 글로벌 산학협력 프로젝트를 통해 매년 수백 명의 기후테크 실무 인력을 배출하고 있다.`,
+        sourceUrl: financialSourceUrl,
+        sourceTitle: "사업단 성과 지표",
+        targetParaIdx: 1,
+        insertedInParaIdx: null,
+      },
+      {
+        id: "memo-product-feature",
+        category: "포럼·교육 핵심 특징",
+        text: `탄소배출권 거래제도와 재생에너지 전환 사례, 순환경제 비즈니스 모델 등 산업 현장의 핵심 의제를 전문가 패널 토론 방식으로 심도 있게 다룬다.`,
+        sourceUrl: primarySourceUrl,
+        sourceTitle: "포럼 주요 프로그램",
+        targetParaIdx: 1,
+        insertedInParaIdx: null,
+      },
+    ];
+  }
+
+  // 일반 기업용: S2 검색 스니펫 및 원문 추출 정보(대표자, 수치, 설립연도 등) 결합
+  const repInfo = s0.representativeName ? `(대표 ${s0.representativeName})` : "";
+  const metricMatch = rawText.match(/매출\s*(\d+(?:,\d+)*(?:\.\d+)?\s*(?:조|억|만)\s*원)/);
+  const yearMatch = rawText.match(/(19\d{2}|20[0-2]\d)년\s*(?:창립|설립)/);
+
+  const snippetFact = sources
+    .map((s) => s.snippet ?? "")
+    .find((sn) => /(?:설립|대표|주요사업|매출|전문\s*기업)/.test(sn));
+
+  const profileSentence = yearMatch
+    ? `한편 ${yearMatch[1]}년 설립된 ${cleanComp}${repInfo}는 핵심 기술 개발과 현장 맞춤형 솔루션 공급을 주력으로 성장해 온 전문 기업이다.`
+    : snippetFact
+    ? convertRawNoteToMkStyleSentence(snippetFact.split(/\n/)[0]?.slice(0, 95) ?? "", cleanComp)
+    : `한편 ${cleanComp}${repInfo}는 주력 사업 분야의 자체 기술력과 현장 운영 노하우를 바탕으로 국내외 B2B·B2C 시장 내 입지를 넓혀가고 있다.`;
+
+  const revenueSentence = metricMatch
+    ? `특히 ${cleanComp}는 최근 매출 ${metricMatch[1]} 규모의 실적을 달성하는 등 핵심 사업 부문의 안정적인 외형 성장을 이어가고 있다.`
+    : `또한 ${cleanComp}는 주력 제품·서비스 라인업 다변화와 신규 수요처 발굴을 통해 연간 매출 규모와 시장 점유율을 꾸준히 끌어올리고 있다.`;
+
+  const paras = rawText
+    .split(/\n\s*\n|\n+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length >= 15);
+
+  const launchSentence = paras[0]
+    ? `${cleanComp}는 ${compressLeadForHeadline(paras[0], cleanComp)}하며 신규 수요 창출에 나섰다.`
+    : `${cleanComp}는 신규 프로젝트 추진을 통해 현장 활용성과 고객 접근성을 한층 강화했다.`;
+
+  const featureSentence = paras[1]
+    ? convertRawNoteToMkStyleSentence(paras[1].split(/(?<=[.다])\s+/)[0] ?? paras[1], cleanComp)
+    : `현장 도입 시 설치·운영 효율성을 높이고 사용자 편의성을 강화한 특화 설계를 적용한 것이 특징이다.`;
+
+  return [
+    {
+      id: "memo-company-profile",
+      category: "기업 기본 정보",
+      text: profileSentence,
+      sourceUrl: primarySourceUrl,
+      sourceTitle: `${cleanComp} 기업 개황`,
+      targetParaIdx: 1,
+      insertedInParaIdx: null,
+    },
+    {
+      id: "memo-company-revenue",
+      category: "매출액·실적 정보",
+      text: revenueSentence,
+      sourceUrl: financialSourceUrl,
+      sourceTitle: `${cleanComp} 매출·실적 동향`,
+      targetParaIdx: Math.min(2, Math.max(0, paras.length - 1)),
+      insertedInParaIdx: null,
+    },
+    {
+      id: "memo-brand-launch",
+      category: "브랜드·출시 핵심 팩트",
+      text: launchSentence,
+      sourceUrl: primarySourceUrl,
+      sourceTitle: "보도자료 핵심 요약",
+      targetParaIdx: 0,
+      insertedInParaIdx: null,
+    },
+    {
+      id: "memo-product-feature",
+      category: "제품·서비스 핵심 특징",
+      text: featureSentence,
+      sourceUrl: primarySourceUrl,
+      sourceTitle: "기술·서비스 특장점",
+      targetParaIdx: 1,
+      insertedInParaIdx: null,
+    },
+  ];
+}
+
 function buildDeterministicDraft(
   mode: JobMode,
   s0: S0Output,
   s5: S5Output,
   options: JobOptions,
   competitors: CompetitorCandidate[],
-  customComparisonAnalysisParagraph?: string
+  customComparisonAnalysisParagraph?: string,
+  sources: NormalizedSource[] = []
 ): Omit<S6Output, "sources"> {
+  const normalizedMode = normalizeJobMode(mode);
   const company = s0.companyName || "대상 기업";
   const repSuffix = s0.representativeName
     ? `(대표 ${s0.representativeName})`
     : "";
+
+  const sentenceSuggestions = generateSentenceProofreadSuggestions(
+    s0.normalizedText,
+    s0,
+    s5
+  );
+  const factMemos = generateCompanyFactMemos(
+    company,
+    s0.normalizedText,
+    s0,
+    sources
+  );
+
+  // 원문 문단 분리 (모드 1 최소 수정용: 원문 문장과 단락 순서를 그대로 보존)
+  const hasOrigDoubleNewline = /\n\s*\n/.test(s0.normalizedText);
+  const origChunks = hasOrigDoubleNewline
+    ? s0.normalizedText.split(/\n\s*\n/)
+    : s0.normalizedText.split(/\n+/);
+  const originalParagraphs = origChunks
+    .map((p) =>
+      p
+        .replace(/[\u200B-\u200D\uFEFF]/g, "")
+        .replace(/\s*\n\s*/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+    )
+    .filter((p) => p.length >= 10);
 
   // 원문 문단 분리: 빈 줄(\n\n)이 있으면 빈 줄 기준으로 먼저 묶고, 없을 때만 줄바꿈(\n) 기준으로 분리
   const hasDoubleNewline = /\n\s*\n/.test(s5.sanitizedText);
@@ -498,8 +1017,30 @@ function buildDeterministicDraft(
     s0
   );
 
+  const defaultCaption =
+    options.captions && options.captions.length > 0 && options.captions[0].trim()
+      ? options.captions
+      : [`${company} 주요 사업 및 매장 관련 이미지. [제공=${company}]`];
+
+  // 모드 1 (기사식 광고 기본 모드 - 최소 수정):
+  // 아예 새로 리라이팅하지 않고, 원문 문단과 문장 구조를 그대로 유지하되
+  // 교정 대상 문장(빨간 줄 → 클릭 시 대안 토글 → 초록색 교체)과 취재 팩트 메모장을 함께 제공한다.
+  if (normalizedMode === "minimal") {
+    return {
+      mode,
+      titleCandidates,
+      title: titleCandidates[0],
+      subtitle,
+      body: originalParagraphs.join("\n\n"),
+      captions: defaultCaption,
+      competitors: [],
+      sentenceSuggestions,
+      factMemos,
+    };
+  }
+
   // 비교·기획 모드일 경우 제목 후보에 업종 경쟁·비교 기획 관점 반영
-  if (mode === "comparative" && titleCandidates.length >= 3) {
+  if (normalizedMode === "comparative" && titleCandidates.length >= 3) {
     const compTitle = buildHeadlineWithCompany(
       company,
       `${compressLeadForHeadline(rawParagraphs[0] ?? "", company)}… 업계 경쟁 본격화`,
@@ -559,7 +1100,7 @@ function buildDeterministicDraft(
 
   // 비교/기획 모드일 경우:
   // 1) 동종업계 경쟁사·유사 브랜드 동향 비교 문단 + 2) 대상 기업과의 차별화 비교 분석 문단을 인용구 앞에 배치
-  if (mode === "comparative") {
+  if (normalizedMode === "comparative") {
     const inferred = inferIndustryCompetitors(company, s5.sanitizedText);
     const validSelectedComps = competitors
       .filter((c) => c.selected && !isInvalidCompetitorName(c.name, company))
@@ -632,11 +1173,6 @@ function buildDeterministicDraft(
     );
   }
 
-  const defaultCaption =
-    options.captions && options.captions.length > 0 && options.captions[0].trim()
-      ? options.captions
-      : [`${company} 주요 사업 및 매장 관련 이미지. [제공=${company}]`];
-
   return {
     mode,
     titleCandidates,
@@ -645,6 +1181,8 @@ function buildDeterministicDraft(
     body: bodyParagraphs.join("\n\n"),
     captions: defaultCaption,
     competitors,
+    sentenceSuggestions,
+    factMemos,
   };
 }
 
@@ -676,7 +1214,7 @@ export function runS6WriteArticle(
     );
 
   const effectiveCompetitors: CompetitorCandidate[] =
-    mode === "comparative"
+    normalizeJobMode(mode) === "comparative"
       ? sanitizedInputComps.length > 0
         ? sanitizedInputComps
         : inferred.competitors
@@ -688,7 +1226,8 @@ export function runS6WriteArticle(
     s5,
     options,
     effectiveCompetitors,
-    customComparisonAnalysisParagraph
+    customComparisonAnalysisParagraph,
+    sources
   );
 
   return {

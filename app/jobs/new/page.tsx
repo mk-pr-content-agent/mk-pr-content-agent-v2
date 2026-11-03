@@ -49,7 +49,7 @@ const SAMPLE_PRESETS = [
 
 export default function NewJobPage() {
   const router = useRouter();
-  const [mode, setMode] = React.useState<JobMode>("ad_article");
+  const [mode, setMode] = React.useState<JobMode>("minimal");
   const [companyName, setCompanyName] = React.useState("");
   const [category, setCategory] = React.useState("기업·경영");
   const [outlet, setOutlet] = React.useState("매일경제(신문, AX)");
@@ -210,22 +210,54 @@ export default function NewJobPage() {
 
           <Card className="p-6 space-y-6">
             <div className="space-y-2">
-              <Label>작성 모드 선택 (PRD F1 / F10)</Label>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-center justify-between">
+                <Label>작성 모드 선택 (v2 · 3가지 맞춤형 작성 모드)</Label>
+                <span className="text-[12px] leading-[18px] text-ink-muted">
+                  작업 생성 후 편집 화면에서도 모드를 즉시 전환할 수 있습니다.
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
                 <button
                   type="button"
-                  onClick={() => setMode("ad_article")}
+                  onClick={() => setMode("minimal")}
                   className={`flex flex-col items-start rounded-md border-hairline p-4 text-left transition-colors duration-150 ${
-                    mode === "ad_article"
+                    mode === "minimal"
                       ? "border-primary bg-primary-subtle"
                       : "border-line bg-surface hover:bg-surface-subtle"
                   }`}
                 >
-                  <span className="text-[14px] leading-[22px] font-semibold text-ink">
-                    기사식광고 모드 (기본)
+                  <div className="flex items-center justify-between w-full gap-2">
+                    <span className="text-[14px] leading-[22px] font-semibold text-ink">
+                      모드 1: 기사식광고 기본 모드 (최소 수정)
+                    </span>
+                    <span className="rounded-md border-hairline border-primary bg-surface px-2 py-0.5 text-[11px] leading-[16px] font-semibold text-primary shrink-0">
+                      권장 · 원문 교열
+                    </span>
+                  </div>
+                  <span className="mt-1.5 text-[12px] leading-[18px] text-ink-muted">
+                    원문을 최소한으로 다듬는 모드입니다. 에이전트가 교정한 원문 문장(빨간 줄)을 클릭해 대안 표현 토글로 교체(초록색)하고, <strong className="font-semibold text-ink">취재 팩트 메모장</strong>에서 기업정보·매출액 등을 한 줄 추가할 수 있습니다.
                   </span>
-                  <span className="mt-1 text-[12px] leading-[18px] text-ink-muted">
-                    단일 기업 보도자료를 매경 기사식광고 스타일(1,200~1,500자)로 작성하고 하드룰 및 네이버 운영평가 규정을 점검합니다.
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setMode("rewrite")}
+                  className={`flex flex-col items-start rounded-md border-hairline p-4 text-left transition-colors duration-150 ${
+                    mode === "rewrite" || mode === "ad_article"
+                      ? "border-primary bg-primary-subtle"
+                      : "border-line bg-surface hover:bg-surface-subtle"
+                  }`}
+                >
+                  <div className="flex items-center justify-between w-full gap-2">
+                    <span className="text-[14px] leading-[22px] font-semibold text-ink">
+                      모드 2: 기사식광고 리라이팅 모드
+                    </span>
+                    <span className="rounded-md border-hairline border-hold bg-hold-bg px-2 py-0.5 text-[11px] leading-[16px] font-semibold text-hold shrink-0">
+                      2분할 비교 · 재작성
+                    </span>
+                  </div>
+                  <span className="mt-1.5 text-[12px] leading-[18px] text-ink-muted">
+                    원문 기사를 기반으로 문장 구성을 늘리거나 줄이고 문단 위치를 바꾸어 매경 기사식광고(1,200~1,500자)로 재작성합니다. <strong className="font-semibold text-ink">원문 vs 재작성 2분할 비교 및 연노란색 수정 하이라이팅</strong>을 제공합니다.
                   </span>
                 </button>
 
@@ -238,16 +270,16 @@ export default function NewJobPage() {
                       : "border-line bg-surface hover:bg-surface-subtle"
                   }`}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between w-full gap-2">
                     <span className="text-[14px] leading-[22px] font-semibold text-ink">
-                      비교·기획 기사 모드
+                      모드 3: 비교·기획 기사 모드
                     </span>
-                    <span className="rounded-md border-hairline border-secondary bg-surface px-2 py-0.5 text-[12px] leading-[18px] font-medium text-secondary">
-                      실험 단계
+                    <span className="rounded-md border-hairline border-secondary bg-surface px-2 py-0.5 text-[11px] leading-[16px] font-semibold text-secondary shrink-0">
+                      실험 단계 · 경쟁사 조사
                     </span>
                   </div>
-                  <span className="mt-1 text-[12px] leading-[18px] text-ink-muted">
-                    유사 업종·경쟁사 동향을 함께 수록합니다. 출처 매핑 및 확장 승인 체크리스트 검수가 필수입니다.
+                  <span className="mt-1.5 text-[12px] leading-[18px] text-ink-muted">
+                    동종업계 경쟁사·유사 브랜드 2~3곳을 웹에서 함께 조사하여 비교·분석 문단을 포함한 기획 기사로 작성합니다. 출처 매핑 및 확장 승인 체크리스트 검수가 필수입니다.
                   </span>
                 </button>
               </div>

@@ -9,11 +9,11 @@ import { Card } from "@/components/ui/card";
 import { LogoutButton } from "@/components/logout-button";
 import { ApiUsageBar } from "@/components/api-usage-bar";
 import { VerdictBadge } from "@/components/verdict-badge";
-import type { VerdictType } from "@/lib/pipeline/types";
+import type { JobMode, VerdictType } from "@/lib/pipeline/types";
 
 interface JobListItem {
   id: string;
-  mode: "ad_article" | "comparative";
+  mode: JobMode;
   status: string;
   verdict: VerdictType | null;
   company_name: string | null;
@@ -241,11 +241,15 @@ export function JobsListClient({
                   <div className="col-span-2">
                     {job.mode === "comparative" ? (
                       <span className="inline-flex h-[24px] items-center rounded-md border-hairline border-secondary bg-secondary-subtle px-2 text-[12px] leading-[18px] font-medium text-secondary">
-                        비교·기획 (실험)
+                        모드 3: 비교·기획
+                      </span>
+                    ) : job.mode === "minimal" ? (
+                      <span className="inline-flex h-[24px] items-center rounded-md border-hairline border-primary bg-primary-subtle px-2 text-[12px] leading-[18px] font-medium text-primary">
+                        모드 1: 기본(최소수정)
                       </span>
                     ) : (
-                      <span className="text-[12px] leading-[18px] text-ink-muted">
-                        기사식광고
+                      <span className="inline-flex h-[24px] items-center rounded-md border-hairline border-hold bg-hold-bg px-2 text-[12px] leading-[18px] font-medium text-hold">
+                        모드 2: 리라이팅
                       </span>
                     )}
                   </div>

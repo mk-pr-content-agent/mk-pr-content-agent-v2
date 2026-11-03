@@ -12,8 +12,17 @@ import {
   stage_results,
 } from "@/db/schema";
 import { getSession } from "@/lib/auth/session";
-import { runS9FinalCheck } from "@/lib/pipeline/s7-s10";
-import type { JobMode, JobOptions, VerdictType } from "@/lib/pipeline/types";
+import { runS0Extract } from "@/lib/pipeline/s0-extract";
+import { runS5Sanitize } from "@/lib/pipeline/s5-sanitize";
+import { runS6WriteArticle } from "@/lib/pipeline/s6-write";
+import { runS7StyleEdit, runS9FinalCheck } from "@/lib/pipeline/s7-s10";
+import type {
+  CompanyFactMemo,
+  JobMode,
+  JobOptions,
+  SentenceProofreadItem,
+  VerdictType,
+} from "@/lib/pipeline/types";
 
 interface UpdateArticleBody {
   title?: string;
@@ -25,6 +34,8 @@ interface UpdateArticleBody {
   mode?: JobMode;
   resolveHold?: boolean;
   resolvedClaimId?: string;
+  sentenceSuggestions?: SentenceProofreadItem[];
+  factMemos?: CompanyFactMemo[];
   competitors?: Array<{
     id?: string;
     name: string;
@@ -124,9 +135,24 @@ export async function PATCH(
   const latest = existingArticles[0];
   const nextVersion = (latest?.version ?? 0) + 1;
 
-  const title = payload.title ?? latest?.title ?? "";
-  const subtitle = payload.subtitle ?? latest?.subtitle ?? "";
-  const body = payload.body ?? latest?.body ?? "";
+  let title = payload.title ?? latest?.title ?? "";
+  let subtitle = payload.subtitle ?? latest?.subtitle ?? "";
+  let body = payload.body ?? latest?.body ?? "";
+  let modeSwitchSuggestions = payload.sentenceSuggestions;
+  let modeSwitchMemos = payload.factMemos;
+
+  // 모드 전환 요청 시 (body 없이 mode만 전달된 경우) 즉시 해당 모드의 본문·교정제안·메모 생성
+  if (payload.mode && payload.body === undefined) {
+    const s0 = runS0Extract(job.raw_text, job.company_name ?? undefined);
+    const s5 = runS5Sanitize(s0.normalizedText);
+    const s6 = runS6WriteArticle(payload.mode, s0, s5, jobOptions, []);
+    const s7 = runS7StyleEdit(s6);
+    title = title || s7.title;
+    subtitle = subtitle || s7.subtitle;
+    body = s7.body;
+    modeSwitchSuggestions = s6.sentenceSuggestions;
+    modeSwitchMemos = s6.factMemos;
+  }
   const captions: string[] =
     payload.captions ??
     (() => {
@@ -206,6 +232,36 @@ export async function PATCH(
 
   if (savedFindings.length > 0) {
     db.insert(rule_findings).values(savedFindings).run();
+  }
+
+  // S6 stage_results 내 sentenceSuggestions 및 factMemos 상태 업데이트
+  if (modeSwitchSuggestions || modeSwitchMemos) {
+    const existingS6 = db
+      .select()
+      .from(stage_results)
+      .where(eq(stage_results.job_id, id))
+      .all()
+      .find((s) => s.stage === "S6");
+    if (existingS6) {
+      let s6Out: Record<string, unknown> = {};
+      try {
+        s6Out = JSON.parse(existingS6.output_json) as Record<string, unknown>;
+      } catch {
+        s6Out = {};
+      }
+      if (modeSwitchSuggestions) {
+        s6Out.sentenceSuggestions = modeSwitchSuggestions;
+      }
+      if (modeSwitchMemos) {
+        s6Out.factMemos = modeSwitchMemos;
+      }
+      db.update(stage_results)
+        .set({
+          output_json: JSON.stringify(s6Out),
+        })
+        .where(eq(stage_results.id, existingS6.id))
+        .run();
+    }
   }
 
   // S9 stage_results 업데이트

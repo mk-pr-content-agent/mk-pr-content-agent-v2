@@ -1,8 +1,44 @@
 import type { RuleFinding } from "@/lib/rules/hard-rules";
 import type { NormalizedSource } from "@/lib/llm/perplexity";
 
-export type JobMode = "ad_article" | "comparative";
+export type JobMode = "minimal" | "rewrite" | "ad_article" | "comparative";
 export type VerdictType = "PASS" | "PASS_WITH_EDIT" | "HOLD" | "REJECT";
+
+export function normalizeJobMode(
+  mode?: string | null
+): "minimal" | "rewrite" | "comparative" {
+  if (mode === "minimal") return "minimal";
+  if (mode === "comparative") return "comparative";
+  // Legacy "ad_article" maps to Mode 2 ("rewrite") as requested in v2
+  return "rewrite";
+}
+
+export interface ProofreadAlternative {
+  id: string;
+  label: string;
+  toneBadge?: string;
+  text: string;
+}
+
+export interface SentenceProofreadItem {
+  id: string;
+  paraIdx: number;
+  originalSentence: string;
+  ruleBadge: string;
+  reason: string;
+  alternatives: ProofreadAlternative[];
+  selectedAlternativeId?: string | null;
+}
+
+export interface CompanyFactMemo {
+  id: string;
+  category: string;
+  text: string;
+  sourceUrl?: string;
+  sourceTitle?: string;
+  targetParaIdx?: number;
+  insertedInParaIdx?: number | null;
+}
 
 export interface JobOptions {
   category?: string;
@@ -117,6 +153,8 @@ export interface S6Output {
   body: string;
   captions: string[];
   competitors: CompetitorCandidate[];
+  sentenceSuggestions?: SentenceProofreadItem[];
+  factMemos?: CompanyFactMemo[];
   sources: NormalizedSource[];
 }
 

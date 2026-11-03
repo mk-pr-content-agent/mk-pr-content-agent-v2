@@ -14,9 +14,11 @@ export type NewUser = typeof users.$inferInsert;
 export const jobs = sqliteTable("jobs", {
   id: text("id").primaryKey(),
   user_id: text("user_id").notNull(),
-  mode: text("mode", { enum: ["ad_article", "comparative"] })
+  mode: text("mode", {
+    enum: ["minimal", "rewrite", "ad_article", "comparative"],
+  })
     .notNull()
-    .default("ad_article"),
+    .default("minimal"),
   status: text("status", {
     enum: ["draft", "running", "hold", "rejected", "completed", "approved"],
   })

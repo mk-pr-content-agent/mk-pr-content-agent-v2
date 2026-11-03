@@ -83,7 +83,13 @@ export async function POST(request: NextRequest) {
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   const mode: JobMode =
-    body.mode === "comparative" ? "comparative" : "ad_article";
+    body.mode === "comparative"
+      ? "comparative"
+      : body.mode === "rewrite"
+      ? "rewrite"
+      : body.mode === "ad_article"
+      ? "ad_article"
+      : "minimal";
 
   db.insert(jobs)
     .values({

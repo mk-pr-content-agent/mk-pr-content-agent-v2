@@ -22,6 +22,16 @@ import type {
  * - "~밝혔다"가 3회 이상이면 중간 출현분을 "~설명했다", "~전했다"로 자동 치환
  */
 export function runS7StyleEdit(s6: S6Output): S7Output {
+  if (s6.mode === "minimal") {
+    return {
+      titleCandidates: s6.titleCandidates,
+      title: s6.title,
+      subtitle: s6.subtitle,
+      body: s6.body,
+      styleEdits: [],
+    };
+  }
+
   let body = s6.body;
   const styleEdits: SanitizedDiff[] = [];
 

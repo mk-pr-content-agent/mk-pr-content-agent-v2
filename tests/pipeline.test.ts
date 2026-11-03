@@ -5,7 +5,10 @@ import { evaluateCompanyVerification } from "@/lib/pipeline/s2-company";
 import { runS3RestrictionScreen } from "@/lib/pipeline/s3-restrict";
 import { runS4FactCheck } from "@/lib/pipeline/s4-factcheck";
 import { runS5Sanitize } from "@/lib/pipeline/s5-sanitize";
-import { runS6WriteArticle } from "@/lib/pipeline/s6-write";
+import {
+  runS6WriteArticle,
+  convertRawNoteToMkStyleSentence,
+} from "@/lib/pipeline/s6-write";
 import {
   runS7StyleEdit,
   runS8PhotoCheck,
@@ -196,5 +199,69 @@ describe("Pipeline Stages S0~S10 (M3~M6)", () => {
     const lastPara = paras[paras.length - 1] ?? "";
     expect(lastPara).toContain("낫소 관계자는");
     expect(lastPara).toContain("라고 말했다.");
+  });
+
+  it("supports Mode 1 (minimal) preserving original paragraphs, generating 3-version sentence proofread suggestions and company/revenue fact memos", () => {
+    const raw = `대한민국 스포츠 브랜드 ㈜낫소가 약 10평 규모의 실내 공간에 설치할 수 있는 이동형 스크린 파크골프 부스를 세계 최초로 선보이며 시장 확대에 나선다고 밝혔다.
+
+이번 부스는 초고속 카메라 센서와 4K 그래픽 엔진을 적용해 생동감 있는 필드를 구현한 것이 특징이다.
+
+낫소 관계자는 "지자체와 복지시설을 중심으로 보급을 확대해 생활체육 저변을 넓히겠다"고 밝혔다.`;
+
+    const s0 = runS0Extract(raw, "㈜낫소");
+    const s5 = runS5Sanitize(s0.normalizedText);
+    const s6Minimal = runS6WriteArticle("minimal", s0, s5, {}, []);
+    const s7Minimal = runS7StyleEdit(s6Minimal);
+
+    expect(s6Minimal.mode).toBe("minimal");
+    expect(s7Minimal.body).toBe(s6Minimal.body);
+    // Original paragraph order is preserved in Mode 1
+    const minimalParas = s6Minimal.body.split("\n\n");
+    expect(minimalParas.length).toBe(3);
+    expect(minimalParas[0]).toContain("이동형 스크린 파크골프 부스");
+    expect(minimalParas[1]).toContain("초고속 카메라 센서");
+    expect(minimalParas[2]).toContain("낫소 관계자는");
+
+    // Sentence proofread suggestions (red-line targets with 3 alternatives each)
+    expect(s6Minimal.sentenceSuggestions).toBeDefined();
+    expect(s6Minimal.sentenceSuggestions!.length).toBeGreaterThanOrEqual(2);
+    for (const sug of s6Minimal.sentenceSuggestions!) {
+      expect(sug.alternatives.length).toBe(3);
+      expect(sug.selectedAlternativeId).toBeNull();
+    }
+
+    // Company fact memos (including company profile & revenue)
+    expect(s6Minimal.factMemos).toBeDefined();
+    expect(s6Minimal.factMemos!.length).toBeGreaterThanOrEqual(4);
+    const categories = s6Minimal.factMemos!.map((m) => m.category);
+    expect(categories).toContain("기업 기본 정보");
+    expect(categories).toContain("매출액·실적 정보");
+
+    // Raw note converter for fact notepad
+    const converted = convertRawNoteToMkStyleSentence(
+      "2025년 연 매출액 480억 원을 기록했습니다",
+      "㈜낫소"
+    );
+    expect(converted).toContain("480억 원");
+    expect(converted.endsWith("했다.")).toBe(true);
+  });
+
+  it("supports Mode 2 (rewrite) reordering middle paragraphs and expanding article body", () => {
+    const raw = `국민대학교 기후변화대응사업단은 오는 11월 12일 서울 성북구 본부관에서 글로벌 산학협력 포럼을 개최한다고 밝혔다.
+
+이번 포럼은 대학생과 청년 연구자들에게 탄소중립 정책 수립 및 ESG 경영 실무 역량을 교육하기 위해 마련됐다.
+
+행사에서는 국내 주요 기후테크 기업 및 연구기관 전문가들이 참여해 탄소배출권 거래제도와 순환경제 비즈니스 모델에 관한 주제 발표를 진행한다.
+
+국민대 관계자는 "인문사회와 이공계를 아우르는 융합형 교육과정을 통해 실무형 그린 인재를 양성하겠다"고 말했다.`;
+
+    const s0 = runS0Extract(raw, "국민대학교");
+    const s5 = runS5Sanitize(s0.normalizedText);
+    const s6Rewrite = runS6WriteArticle("rewrite", s0, s5, {}, []);
+
+    expect(s6Rewrite.mode).toBe("rewrite");
+    expect(s6Rewrite.body.length).toBeGreaterThan(raw.length);
+    const rewriteParas = s6Rewrite.body.split("\n\n");
+    expect(rewriteParas.length).toBeGreaterThanOrEqual(4);
   });
 });

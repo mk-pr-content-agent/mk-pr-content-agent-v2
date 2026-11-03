@@ -794,41 +794,96 @@ export function generateSentenceProofreadSuggestions(
             alt1 = `${withoutLongEng.replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "다양한 활동을 선보일 예정이다")}.`;
           } else if (/선보일\s+계획이다$/.test(withoutLongEng)) {
             alt1 = `${withoutLongEng.replace(/선보일\s+계획이다$/, "선보일 예정이다")}.`;
+          } else if (/마련할\s+계획이다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng
+              .replace(/대회\s+기간\s+중\s+/, "대회 기간 ")
+              .replace(/공간인\s+([‘'“"][^’'”"]+[’'”"])도\s+선수촌\s+내에\s+마련할\s+계획이다$/, "$1을 선수촌 내에 운영한다")
+              .replace(/마련할\s+계획이다$/, "운영한다")}.`;
+          } else if (/전달할\s+예정이다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng
+              .replace(/^또한\s+/, "")
+              .replace(/생생하고\s+현장감\s+넘치는\s+화면을/, "현장감 있는 중계 화면을")
+              .replace(/전달할\s+예정이다$/, "전달한다")}.`;
+          } else if (/기념할\s+수\s+있다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng
+              .replace(/영광의\s+순간을\s+/, "")
+              .replace(/특별한\s+순간을\s+기념할\s+수\s+있다$/, "순간을 기념하도록 구성됐다")
+              .replace(/기념할\s+수\s+있다$/, "기념하도록 구성됐다")}.`;
+          } else if (/활용할\s+수\s+있다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng.replace(/폭넓게\s+활용할\s+수\s+있다$/, "두루 활용하도록 구성했다").replace(/활용할\s+수\s+있다$/, "활용하도록 구성했다")}.`;
+          } else if (/기획한\s+제품이다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng.replace(/활용해\s+/, "기반으로 ").replace(/기획한\s+제품이다$/, "개발된 제품이다")}.`;
+          } else if (/생산해\s+왔다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng.replace(/개발\s+및\s+생산해\s+왔다$/, "개발·공급해 왔다").replace(/생산해\s+왔다$/, "공급해 왔다")}.`;
           } else if (/최초로\s+도입된다$/.test(withoutLongEng)) {
             alt1 = `${withoutLongEng.replace(/^특히\s+/, "").replace(/최초로\s+도입된다$/, "처음 도입된다")}.`;
+          } else if (/구현하도록\s+설계됐다$/.test(withoutLongEng)) {
+            alt1 = `${withoutLongEng.replace(/선명하고\s+생동감\s+있는\s+/, "실감형 ").replace(/구현하도록\s+설계됐다$/, "구현했다")}.`;
           } else if (/설계됐다$/.test(withoutLongEng)) {
-            alt1 = `${withoutLongEng.replace(/설계됐다$/, "구현됐다")}.`;
+            alt1 = `${withoutLongEng.replace(/설계됐다$/, "구성됐다")}.`;
           } else if (/설계했다$/.test(withoutLongEng)) {
             alt1 = `${withoutLongEng.replace(/설계했다$/, "구성했다")}.`;
           } else if (/간소화했다$/.test(withoutLongEng)) {
-            alt1 = `${withoutLongEng.replace(/간소화했다$/, "줄였다")}.`;
+            alt1 = `${withoutLongEng.replace(/방식으로\s+설계해\s+/, "방식을 적용해 ").replace(/간소화했다$/, "단축했다")}.`;
           } else if (withoutLongEng !== cleanBase) {
             alt1 = `${withoutLongEng}.`;
           } else {
-            alt1 = `${withoutLongEng.replace(/활용해\s+/, "통해 ").replace(/계획이다$/, "예정이다").replace(/특징이다$/, "강점이다")}.`;
+            alt1 = `${withoutLongEng
+              .replace(/^또한\s+/, "아울러 ")
+              .replace(/^특히\s+/, "")
+              .replace(/활용해\s+/, "통해 ")
+              .replace(/계획이다$/, "예정이다")
+              .replace(/예정이다$/, "방침이다")
+              .replace(/특징이다$/, "강점이다")
+              .replace(/수\s+있다$/, "수 있도록 했다")}.`;
           }
 
           // 버전 2: 현재형 간결 서술어로 정리 (사족 추가 없음)
           alt2 = `${withoutLongEng
+            .replace(/^또한\s+/, "아울러 ")
             .replace(/활용해\s+/, "통해 ")
             .replace(/선보일\s+계획이다$/, "선보인다")
+            .replace(/마련할\s+계획이다$/, "마련한다")
+            .replace(/전달할\s+예정이다$/, "송출한다")
+            .replace(/기념할\s+수\s+있다$/, "기념하는 프로그램이다")
+            .replace(/활용할\s+수\s+있다$/, "활용 가능하다")
+            .replace(/기획한\s+제품이다$/, "설계된 시스템이다")
+            .replace(/생산해\s+왔다$/, "선보여 왔다")
             .replace(/최초로\s+도입된다$/, "처음 적용된다")
+            .replace(/구현하도록\s+설계됐다$/, "구현했다")
             .replace(/설계됐다$/, "제작됐다")
             .replace(/설계했다$/, "마련했다")
             .replace(/간소화했다$/, "간편화했다")}.`;
-          if (alt2 === alt1) {
-            alt2 = `${withoutLongEng.replace(/^특히\s+/, "").replace(/다$/, "는 설명이다")}.`;
+          if (alt2 === alt1 || alt2 === `${cleanBase}.`) {
+            alt2 = `${withoutLongEng.replace(/^특히\s+|^또한\s+/, "").replace(/다$/, "는 설명이다")}.`;
           }
 
-          // 버전 3: 불필요한 부사어('특히', '다양한')를 덜어낸 담백한 문장
+          // 버전 3: 불필요한 부사어('특히', '다양한', '생생하고')를 덜어낸 담백한 문장
           alt3 = `${withoutLongEng
-            .replace(/^특히\s+/, "")
+            .replace(/^특히\s+|^또한\s+/, "")
+            .replace(/생생하고\s+현장감\s+넘치는\s+/g, "현장감 있는 ")
+            .replace(/선명하고\s+생동감\s+있는\s+/g, "고화질 ")
+            .replace(/영광의\s+순간을\s+/g, "")
             .replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "체험·지원 프로그램을 운영한다")
+            .replace(/마련할\s+계획이다$/, "조성한다")
+            .replace(/전달할\s+예정이다$/, "전달한다")
+            .replace(/기념할\s+수\s+있다$/, "기념할 수 있도록 지원한다")
             .replace(/최초로\s+도입된다$/, "처음으로 운영된다")
             .replace(/방식으로\s+설계해\s+/, "방식을 적용해 ")}.`;
-          if (alt3 === alt1 || alt3 === alt2) {
-            alt3 = `${withoutLongEng.replace(/^이번\s+/, "").replace(/다$/, "게 된다")}.`;
+          if (alt3 === alt1 || alt3 === alt2 || alt3 === `${cleanBase}.`) {
+            alt3 = `${withoutLongEng.replace(/^이번\s+|^특히\s+/, "").replace(/다$/, "게 된다")}.`;
           }
+        }
+
+        const normOrig = sent.replace(/\s+/g, " ").trim();
+        if (alt1.replace(/\s+/g, " ").trim() === normOrig) {
+          alt1 = `${withoutLongEng.replace(/다$/, "다고 설명했다")}.`;
+        }
+        if (alt2.replace(/\s+/g, " ").trim() === normOrig || alt2 === alt1) {
+          alt2 = `${withoutLongEng.replace(/^특히\s+|^또한\s+/, "").replace(/다$/, "는 설명이다")}.`;
+        }
+        if (alt3.replace(/\s+/g, " ").trim() === normOrig || alt3 === alt1 || alt3 === alt2) {
+          alt3 = `${withoutLongEng.replace(/^이번\s+|^특히\s+|^또한\s+/, "").replace(/다$/, "도록 구성됐다")}.`;
         }
 
         suggestions.push({
@@ -1184,12 +1239,30 @@ function buildDeterministicDraft(
     for (let i = 1; i < nonQuoteParagraphs.length; i++) {
       let rw = nonQuoteParagraphs[i]!
         .replace(/\([A-Za-z0-9\s,&.'-]{6,}\)/g, "")
+        .replace(/최초로\s+도입된다/g, "처음 도입된다")
         .replace(/활용해\s+/g, "기반으로 ")
+        .replace(/영광의\s+순간을\s+/g, "")
+        .replace(/생생하고\s+현장감\s+넘치는\s+화면을/g, "현장감 있는 중계 화면을")
+        .replace(/선명하고\s+생동감\s+있는\s+/g, "실감형 ")
+        .replace(/대회\s+기간\s+중\s+/g, "대회 기간 ")
+        .replace(/^또한\s+/g, "아울러 ")
+        .replace(/다양한\s+활동을\s+선보일\s+계획이다\.$/g, "현장 체험·지원 프로그램을 운영한다.")
         .replace(/선보일\s*계획이다\.$/g, "선보인다.")
-        .replace(/전달할\s*예정이다\.$/g, "전달한다.")
+        .replace(/전달할\s*예정이다\.$/g, "송출한다.")
+        .replace(/공간인\s+([‘'“"][^’'”"]+[’'”"])도\s+선수촌\s+내에\s+마련할\s+계획이다\.$/g, "$1을 선수촌 내에 운영한다.")
         .replace(/마련할\s*계획이다\.$/g, "운영한다.")
+        .replace(/특별한\s+순간을\s+기념할\s+수\s+있다\.$/g, "순간을 기념하도록 구성됐다.")
+        .replace(/기념할\s+수\s+있다\.$/g, "기념하도록 구성됐다.")
+        .replace(/폭넓게\s+활용할\s+수\s+있다\.$/g, "두루 활용하도록 구성했다.")
+        .replace(/활용할\s+수\s+있다\.$/g, "활용하도록 구성했다.")
+        .replace(/구현하도록\s+설계됐다\.$/g, "구현했다.")
+        .replace(/설계됐다\.$/g, "구성됐다.")
+        .replace(/설계했다\.$/g, "구성했다.")
+        .replace(/간소화했다\.$/g, "단축했다.")
         .replace(/지원할\s*예정이다\.$/g, "지원한다.")
         .replace(/운영할\s*예정이다\.$/g, "운영한다.")
+        .replace(/계획이다\.$/g, "방침이다.")
+        .replace(/예정이다\.$/g, "전망이다.")
         .replace(/\s+/g, " ")
         .trim();
       if (i === 2 && !rw.startsWith("한편 ") && !rw.startsWith("특히 ") && !rw.startsWith("아울러 ")) {
@@ -1199,12 +1272,18 @@ function buildDeterministicDraft(
     }
   }
 
-  // 포털 중복·유사 기사 판정 회피를 위해 1문단(리드)은 고정하고 2문단과 3문단의 위치를 교차 재배치
+  // 포털 중복·유사 기사 판정 회피를 위해 1문단(리드)은 고정하고 중간 문단의 위치를 교차 재배치
   if (bodyParagraphs.length >= 3) {
     const secondP = bodyParagraphs[1]!;
     const thirdP = bodyParagraphs[2]!;
     bodyParagraphs[1] = thirdP;
     bodyParagraphs[2] = secondP;
+  }
+  if (bodyParagraphs.length >= 5) {
+    const fourthP = bodyParagraphs[3]!;
+    const fifthP = bodyParagraphs[4]!;
+    bodyParagraphs[3] = fifthP;
+    bodyParagraphs[4] = fourthP;
   }
 
   // 비교/기획 모드일 경우:

@@ -422,10 +422,22 @@ export default function JobWorkspacePage() {
       }
     }
 
-    if (
-      Array.isArray(parsedS6.sentenceSuggestions) &&
-      parsedS6.sentenceSuggestions.length > 0
-    ) {
+    const rawSugsJson = JSON.stringify(parsedS6.sentenceSuggestions ?? []);
+    const hasStaleOrIdenticalSugs =
+      !Array.isArray(parsedS6.sentenceSuggestions) ||
+      parsedS6.sentenceSuggestions.length === 0 ||
+      rawSugsJson.includes("본격 추진하며 시장 공략에") ||
+      rawSugsJson.includes("매경 데스크 스타일") ||
+      /측은\s+[가-힣A-Za-z0-9㈜()]+(?:은|는|이|가)\s/.test(rawSugsJson) ||
+      parsedS6.sentenceSuggestions.some((s) =>
+        (s.alternatives ?? []).some(
+          (a) =>
+            (a.text ?? "").replace(/\s+/g, " ").trim() ===
+            (s.originalSentence ?? "").replace(/\s+/g, " ").trim()
+        )
+      );
+
+    if (!hasStaleOrIdenticalSugs && parsedS6.sentenceSuggestions) {
       setSentenceSuggestions(parsedS6.sentenceSuggestions);
     } else {
       // 기존 DB 레코드용 클라이언트 보조 생성
@@ -2038,6 +2050,74 @@ export default function JobWorkspacePage() {
               </React.Fragment>
             );
           }
+
+          if (effectiveMode !== "minimal") {
+            const cleanSent = sent.replace(/\s+/g, " ").trim();
+            const sameBodyPara = (bodyParagraphs[rIdx] ?? "").replace(/\s+/g, " ").trim();
+            const unchangedInSamePara =
+              cleanSent.length >= 8 && sameBodyPara.includes(cleanSent);
+
+            if (!unchangedInSamePara) {
+              const isMovedPara =
+                rIdx === 1 ||
+                rIdx === 2 ||
+                (rawParagraphs.length >= 5 && (rIdx === 3 || rIdx === 4));
+              const targetMovedIdx =
+                rIdx === 1
+                  ? 2
+                  : rIdx === 2
+                  ? 1
+                  : rIdx === 3 && rawParagraphs.length >= 5
+                  ? 4
+                  : rIdx === 4 && rawParagraphs.length >= 5
+                  ? 3
+                  : rIdx;
+              const tokenRegex =
+                /(\([A-Za-z0-9\s,&·-]{6,}\)|세계\s*최초로?|국내\s*최초로?|업계\s*최초로?|최초로|활용해|영광의\s+순간을|생생하고\s+현장감\s+넘치는\s+화면을|선명하고\s+생동감\s+있는|대회\s+기간\s+중|다양한\s+활동을\s+선보일\s+계획이다\.?|선보일\s+계획이다\.?|전달할\s+예정이다\.?|마련할\s+계획이다\.?|특별한\s+순간을\s+기념할\s+수\s+있다\.?|기념할\s+수\s+있다\.?|폭넓게\s+활용할\s+수\s+있다\.?|구현하도록\s+설계됐다\.?|설계됐다\.?|설계했다\.?|간소화했다\.?|개발\s+및\s+생산해\s+왔다\.?)/g;
+              const parts = sent.split(tokenRegex);
+
+              return (
+                <span
+                  key={`${rIdx}-${sIdx}-rw-orig`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    scrollToParagraph(targetMovedIdx);
+                  }}
+                  title={
+                    isMovedPara
+                      ? `클릭 시 오른쪽 리라이팅 단락 ${String(targetMovedIdx + 1).padStart(2, "0")} 위치로 이동합니다`
+                      : "오른쪽 화면에서 기사체로 리라이팅된 원문 문장입니다"
+                  }
+                  className="inline rounded-sm bg-[#FFF4E5] border-b border-[#F59E0B] text-ink px-1 py-0.5 mr-1.5 cursor-pointer hover:bg-[#FDE68A]/50 transition-colors"
+                >
+                  {parts.map((part, pIdx) => {
+                    if (!part) return null;
+                    tokenRegex.lastIndex = 0;
+                    if (tokenRegex.test(part)) {
+                      return (
+                        <span
+                          key={pIdx}
+                          className="rounded-sm bg-reject-bg text-reject line-through decoration-reject px-1 mx-0.5 font-medium"
+                          title="리라이팅 시 생략 또는 매경 기사체로 치환된 원문 표현"
+                        >
+                          {part}
+                        </span>
+                      );
+                    }
+                    return <span key={pIdx}>{part}</span>;
+                  })}
+                  <span className="ml-1 inline-flex items-center rounded bg-[#B26A00] px-1.5 py-0.2 text-[10px] font-bold text-surface align-middle whitespace-nowrap select-none">
+                    {isMovedPara
+                      ? `⇄ 단락${String(targetMovedIdx + 1).padStart(2, "0")} 이동·리라이팅`
+                      : rIdx === 0 && sIdx === 0
+                      ? "✎ 리드문 리라이팅"
+                      : "✎ 리라이팅됨"}
+                  </span>
+                </span>
+              );
+            }
+          }
+
           return (
             <span key={`${rIdx}-${sIdx}`} className="mr-1.5">
               {sent}
@@ -3276,11 +3356,15 @@ export default function JobWorkspacePage() {
                         <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 border-b-hairline border-line bg-surface">
                           <div className="flex items-center gap-2">
                             <span className="inline-flex h-[22px] items-center rounded bg-[#334155] px-2.5 text-[11px] font-bold text-surface whitespace-nowrap">
-                              왼쪽 화면 · 원문 {effectiveMode === "minimal" ? "(교정 표시)" : "보도자료"}
+                              왼쪽 화면 · 원문 {effectiveMode === "minimal" ? "(교정 표시)" : "보도자료 (리라이팅 구간 표시)"}
                             </span>
-                            {effectiveMode === "minimal" && (
+                            {effectiveMode === "minimal" ? (
                               <span className="text-[11px] text-ink-muted break-keep">
                                 <strong className="text-reject">빨간줄</strong> 클릭 → <strong className="text-pass">초록색 교체</strong>
+                              </span>
+                            ) : (
+                              <span className="text-[11px] text-ink-muted break-keep">
+                                <strong className="text-hold">주황색·취소선</strong> = 리라이팅·단락 이동된 원문
                               </span>
                             )}
                           </div>

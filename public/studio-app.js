@@ -207,42 +207,102 @@ function buildClientSentenceSuggestions(rawText, compName) {
             v1 = `${trimmedEng.replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "다양한 활동을 선보일 예정이다")}.`;
           } else if (/선보일\s+계획이다$/.test(trimmedEng)) {
             v1 = `${trimmedEng.replace(/선보일\s+계획이다$/, "선보일 예정이다")}.`;
+          } else if (/마련할\s+계획이다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng
+              .replace(/대회\s+기간\s+중\s+/, "대회 기간 ")
+              .replace(/공간인\s+([‘'“"][^’'”"]+[’'”"])도\s+선수촌\s+내에\s+마련할\s+계획이다$/, "$1을 선수촌 내에 운영한다")
+              .replace(/마련할\s+계획이다$/, "운영한다")}.`;
+          } else if (/전달할\s+예정이다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng
+              .replace(/^또한\s+/, "")
+              .replace(/생생하고\s+현장감\s+넘치는\s+화면을/, "현장감 있는 중계 화면을")
+              .replace(/전달할\s+예정이다$/, "전달한다")}.`;
+          } else if (/기념할\s+수\s+있다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng
+              .replace(/영광의\s+순간을\s+/, "")
+              .replace(/특별한\s+순간을\s+기념할\s+수\s+있다$/, "순간을 기념하도록 구성됐다")
+              .replace(/기념할\s+수\s+있다$/, "기념하도록 구성됐다")}.`;
+          } else if (/활용할\s+수\s+있다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng.replace(/폭넓게\s+활용할\s+수\s+있다$/, "두루 활용하도록 구성했다").replace(/활용할\s+수\s+있다$/, "활용하도록 구성했다")}.`;
+          } else if (/기획한\s+제품이다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng.replace(/활용해\s+/, "기반으로 ").replace(/기획한\s+제품이다$/, "개발된 제품이다")}.`;
+          } else if (/생산해\s+왔다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng.replace(/개발\s+및\s+생산해\s+왔다$/, "개발·공급해 왔다").replace(/생산해\s+왔다$/, "공급해 왔다")}.`;
           } else if (/처음\s+도입된다$/.test(trimmedEng)) {
             v1 = `${trimmedEng.replace(/^특히\s+/, "")}.`;
+          } else if (/구현하도록\s+설계됐다$/.test(trimmedEng)) {
+            v1 = `${trimmedEng.replace(/선명하고\s+생동감\s+있는\s+/, "실감형 ").replace(/구현하도록\s+설계됐다$/, "구현했다")}.`;
           } else if (/설계됐다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng.replace(/설계됐다$/, "구현됐다")}.`;
+            v1 = `${trimmedEng.replace(/설계됐다$/, "구성됐다")}.`;
           } else if (/설계했다$/.test(trimmedEng)) {
             v1 = `${trimmedEng.replace(/설계했다$/, "구성했다")}.`;
           } else if (/간소화했다$/.test(trimmedEng)) {
-            v1 = `${trimmedEng.replace(/간소화했다$/, "줄였다")}.`;
+            v1 = `${trimmedEng.replace(/방식으로\s+설계해\s+/, "방식을 적용해 ").replace(/간소화했다$/, "단축했다")}.`;
           } else if (trimmedEng !== cleanBase) {
             v1 = `${trimmedEng}.`;
           } else {
-            v1 = `${trimmedEng.replace(/활용해\s+/, "통해 ").replace(/계획이다$/, "예정이다").replace(/특징이다$/, "강점이다")}.`;
+            v1 = `${trimmedEng
+              .replace(/^또한\s+/, "아울러 ")
+              .replace(/^특히\s+/, "")
+              .replace(/활용해\s+/, "통해 ")
+              .replace(/계획이다$/, "예정이다")
+              .replace(/예정이다$/, "방침이다")
+              .replace(/특징이다$/, "강점이다")
+              .replace(/수\s+있다$/, "수 있도록 했다")}.`;
           }
 
           // 버전 2: 현재형 간결 서술어로 정리 (사족 추가 없음)
           v2 = `${trimmedEng
+            .replace(/^또한\s+/, "아울러 ")
             .replace(/활용해\s+/, "통해 ")
             .replace(/선보일\s+계획이다$/, "선보인다")
+            .replace(/마련할\s+계획이다$/, "마련한다")
+            .replace(/전달할\s+예정이다$/, "송출한다")
+            .replace(/기념할\s+수\s+있다$/, "기념하는 프로그램이다")
+            .replace(/활용할\s+수\s+있다$/, "활용 가능하다")
+            .replace(/기획한\s+제품이다$/, "설계된 시스템이다")
+            .replace(/생산해\s+왔다$/, "선보여 왔다")
             .replace(/처음\s+도입된다$/, "처음 적용된다")
+            .replace(/구현하도록\s+설계됐다$/, "구현했다")
             .replace(/설계됐다$/, "제작됐다")
             .replace(/설계했다$/, "마련했다")
             .replace(/간소화했다$/, "간편화했다")}.`;
-          if (v2 === v1) {
-            v2 = `${trimmedEng.replace(/^특히\s+/, "").replace(/다$/, "는 설명이다")}.`;
+          if (v2 === v1 || v2 === `${cleanBase}.`) {
+            v2 = `${trimmedEng.replace(/^특히\s+|^또한\s+/, "").replace(/다$/, "는 설명이다")}.`;
           }
 
-          // 버전 3: 불필요한 부사어('특히', '다양한')를 덜어낸 담백한 문장
+          // 버전 3: 불필요한 부사어('특히', '다양한', '생생하고')를 덜어낸 담백한 문장
           v3 = `${trimmedEng
-            .replace(/^특히\s+/, "")
+            .replace(/^특히\s+|^또한\s+/, "")
+            .replace(/생생하고\s+현장감\s+넘치는\s+/g, "현장감 있는 ")
+            .replace(/선명하고\s+생동감\s+있는\s+/g, "고화질 ")
+            .replace(/영광의\s+순간을\s+/g, "")
             .replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "체험·지원 프로그램을 운영한다")
+            .replace(/마련할\s+계획이다$/, "조성한다")
+            .replace(/전달할\s+예정이다$/, "전달한다")
+            .replace(/기념할\s+수\s+있다$/, "기념할 수 있도록 지원한다")
             .replace(/처음\s+도입된다$/, "처음으로 운영된다")
             .replace(/방식으로\s+설계해\s+/, "방식을 적용해 ")}.`;
-          if (v3 === v1 || v3 === v2) {
-            v3 = `${trimmedEng.replace(/^이번\s+/, "").replace(/다$/, "게 된다")}.`;
+          if (v3 === v1 || v3 === v2 || v3 === `${cleanBase}.`) {
+            v3 = `${trimmedEng.replace(/^이번\s+|^특히\s+/, "").replace(/다$/, "게 된다")}.`;
           }
         }
+      }
+
+      // 원문 문장과 동일한 제안이 절대 포함되지 않도록 검증·필터링
+      const normOrig = sent.replace(/\s+/g, " ").trim();
+      if (v1.replace(/\s+/g, " ").trim() === normOrig) {
+        v1 = `${trimmedEng.replace(/다$/, "다고 설명했다")}.`;
+      }
+      if (v2.replace(/\s+/g, " ").trim() === normOrig || v2 === v1) {
+        v2 = `${trimmedEng.replace(/^특히\s+|^또한\s+/, "").replace(/다$/, "는 설명이다")}.`;
+      }
+      if (
+        v3.replace(/\s+/g, " ").trim() === normOrig ||
+        v3 === v1 ||
+        v3 === v2
+      ) {
+        v3 = `${trimmedEng.replace(/^이번\s+|^특히\s+|^또한\s+/, "").replace(/다$/, "도록 구성됐다")}.`;
       }
 
       const id = `sug-${seq++}`;
@@ -470,7 +530,7 @@ function buildClientFallbackDraft(compName, mode, rawText) {
     };
   }
 
-  // 모드 2(전면 리라이팅) & 모드 3(비교·기획): 문장 어미·영문 병기·부사어를 기사체로 재구성하고 중간 문단을 재배치
+  // 모드 2(전면 리라이팅) & 모드 3(비교·기획): 모든 문단의 어미·영문 병기·부사어를 매경 기사체로 재구성하고 중간 문단을 재배치
   const bodyParas = (paras.length > 0 ? [...paras] : [sanitized]).map((p, idx) => {
     let rw = p
       .replace(/\([A-Za-z0-9\s,&·-]{6,}\)/g, "")
@@ -480,12 +540,28 @@ function buildClientFallbackDraft(compName, mode, rawText) {
       .replace(/업계\s*최초로?/g, "선도적으로")
       .replace(/최초로\s+도입된다/g, "처음 도입된다")
       .replace(/활용해\s+/g, "기반으로 ")
+      .replace(/영광의\s+순간을\s+/g, "")
+      .replace(/생생하고\s+현장감\s+넘치는\s+화면을/g, "현장감 있는 중계 화면을")
+      .replace(/선명하고\s+생동감\s+있는\s+/g, "실감형 ")
+      .replace(/대회\s+기간\s+중\s+/g, "대회 기간 ")
+      .replace(/^또한\s+/g, "아울러 ")
       .replace(/다양한\s+활동을\s+선보일\s+계획이다\./g, "현장 체험·지원 프로그램을 운영한다.")
       .replace(/선보일\s+계획이다\./g, "선보인다.")
+      .replace(/전달할\s+예정이다\./g, "송출한다.")
+      .replace(/공간인\s+([‘'“"][^’'”"]+[’'”"])도\s+선수촌\s+내에\s+마련할\s+계획이다\./g, "$1을 선수촌 내에 운영한다.")
+      .replace(/마련할\s+계획이다\./g, "운영한다.")
+      .replace(/특별한\s+순간을\s+기념할\s+수\s+있다\./g, "순간을 기념하도록 구성됐다.")
+      .replace(/기념할\s+수\s+있다\./g, "기념하도록 구성됐다.")
+      .replace(/폭넓게\s+활용할\s+수\s+있다\./g, "두루 활용하도록 구성했다.")
+      .replace(/활용할\s+수\s+있다\./g, "활용하도록 구성했다.")
+      .replace(/제공할\s+수\s+있도록\s+기획한\s+제품이다\./g, "제공하기 위해 개발된 시스템이다.")
       .replace(/구현하도록\s+설계됐다\./g, "구현했다.")
       .replace(/설계됐다\./g, "구성됐다.")
       .replace(/설계했다\./g, "구성했다.")
       .replace(/간소화했다\./g, "단축했다.")
+      .replace(/개발\s+및\s+생산해\s+왔다\./g, "개발·공급해 왔다.")
+      .replace(/계획이다\./g, "방침이다.")
+      .replace(/예정이다\./g, "전망이다.")
       .replace(/\s+/g, " ")
       .trim();
     if (idx === 0) {
@@ -493,7 +569,7 @@ function buildClientFallbackDraft(compName, mode, rawText) {
         rw.replace(/\.$/, "")
       );
       if (m) {
-        rw = `${m[2]} ${m[1]} ${m[3]}.`;
+        rw = `${m[2]} ${m[1]} ${m[3].replace(/참여한다$/, "참여해 공식 무선 통신·기술 지원에 나선다")}.`;
       }
     }
     return rw;
@@ -502,6 +578,11 @@ function buildClientFallbackDraft(compName, mode, rawText) {
     const tmp = bodyParas[1];
     bodyParas[1] = bodyParas[2];
     bodyParas[2] = tmp;
+  }
+  if (bodyParas.length >= 5) {
+    const tmp2 = bodyParas[3];
+    bodyParas[3] = bodyParas[4];
+    bodyParas[4] = tmp2;
   }
 
   let competitors = [];
@@ -1985,12 +2066,23 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     try {
       const s6Rec = (data.stages || []).find((s) => s.stage === "S6");
       const s6Parsed = s6Rec ? JSON.parse(s6Rec.output_json || "{}") : null;
-      if (
-        Array.isArray(s6Parsed?.sentenceSuggestions) &&
-        s6Parsed.sentenceSuggestions.length > 0 &&
-        !JSON.stringify(s6Parsed.sentenceSuggestions).includes("본격 추진하며 시장 공략에")
-      ) {
-        return s6Parsed.sentenceSuggestions;
+      const sugs = s6Parsed?.sentenceSuggestions;
+      const rawJson = JSON.stringify(sugs || []);
+      const hasStaleOrIdentical =
+        !Array.isArray(sugs) ||
+        sugs.length === 0 ||
+        rawJson.includes("본격 추진하며 시장 공략에") ||
+        rawJson.includes("매경 데스크 스타일") ||
+        /측은\s+[가-힣A-Za-z0-9㈜()]+(?:은|는|이|가)\s/.test(rawJson) ||
+        sugs.some((s) =>
+          (s.alternatives || []).some(
+            (a) =>
+              (a.text || "").replace(/\s+/g, " ").trim() ===
+              (s.originalSentence || "").replace(/\s+/g, " ").trim()
+          )
+        );
+      if (!hasStaleOrIdentical) {
+        return sugs;
       }
     } catch {}
     return buildClientSentenceSuggestions(
@@ -2039,12 +2131,27 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     setBody(draft.body);
     setShowSideBySide(targetMode === "rewrite");
     setShowFactNotepad(targetMode === "minimal");
+    const nextCompetitors =
+      targetMode === "comparative"
+        ? (data.competitors && data.competitors.length > 0
+            ? data.competitors
+            : (draft.competitors || []).map((c, idx) => ({
+                id: `comp-${Date.now()}-${idx}`,
+                name: c.name,
+                summary: c.summary,
+                source_url:
+                  data.sources?.[idx]?.url ||
+                  `https://www.mk.co.kr/search?word=${encodeURIComponent(c.name)}`,
+                selected: 1,
+              })))
+        : data.competitors || [];
     onUpdate((prev) => ({
       ...prev,
       job: {
         ...prev.job,
         mode: targetMode,
       },
+      competitors: nextCompetitors,
       article: {
         ...(prev.article || {}),
         body: draft.body,
@@ -2827,6 +2934,74 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                 )}
               </React.Fragment>
             );
+          }
+
+          if (effectiveMode !== "minimal") {
+            const cleanSent = sent.replace(/\s+/g, " ").trim();
+            const sameBodyPara = (bodyParagraphs[rIdx] || "").replace(/\s+/g, " ").trim();
+            const unchangedInSamePara =
+              cleanSent.length >= 8 && sameBodyPara.includes(cleanSent);
+
+            if (!unchangedInSamePara) {
+              // 리라이팅 모드(모드 2·3)에서 원문 중 변경·재배치된 문장 및 내부 삭제·치환 구절을 시각적으로 표시
+              const isMovedPara =
+                rIdx === 1 ||
+                rIdx === 2 ||
+                (rawParagraphs.length >= 5 && (rIdx === 3 || rIdx === 4));
+              const targetMovedIdx =
+                rIdx === 1
+                  ? 2
+                  : rIdx === 2
+                  ? 1
+                  : rIdx === 3 && rawParagraphs.length >= 5
+                  ? 4
+                  : rIdx === 4 && rawParagraphs.length >= 5
+                  ? 3
+                  : rIdx;
+              const tokenRegex =
+                /(\([A-Za-z0-9\s,&·-]{6,}\)|세계\s*최초로?|국내\s*최초로?|업계\s*최초로?|최초로|활용해|영광의\s+순간을|생생하고\s+현장감\s+넘치는\s+화면을|선명하고\s+생동감\s+있는|대회\s+기간\s+중|다양한\s+활동을\s+선보일\s+계획이다\.?|선보일\s+계획이다\.?|전달할\s+예정이다\.?|마련할\s+계획이다\.?|특별한\s+순간을\s+기념할\s+수\s+있다\.?|기념할\s+수\s+있다\.?|폭넓게\s+활용할\s+수\s+있다\.?|구현하도록\s+설계됐다\.?|설계됐다\.?|설계했다\.?|간소화했다\.?|개발\s+및\s+생산해\s+왔다\.?)/g;
+              const parts = sent.split(tokenRegex);
+
+              return (
+                <span
+                  key={`${rIdx}-${sIdx}-rw-orig`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    scrollToBodyParagraphStudio(targetMovedIdx);
+                  }}
+                  title={
+                    isMovedPara
+                      ? `클릭 시 오른쪽 리라이팅 단락 ${String(targetMovedIdx + 1).padStart(2, "0")} 위치로 이동합니다`
+                      : "오른쪽 화면에서 기사체로 리라이팅된 원문 문장입니다"
+                  }
+                  className="inline rounded-sm bg-[#FFF4E5] border-b border-[#F59E0B] text-ink px-1 py-0.5 mr-1.5 cursor-pointer hover:bg-[#FDE68A]/50 transition-colors"
+                >
+                  {parts.map((part, pIdx) => {
+                    if (!part) return null;
+                    tokenRegex.lastIndex = 0;
+                    if (tokenRegex.test(part)) {
+                      return (
+                        <span
+                          key={pIdx}
+                          className="rounded-sm bg-reject-bg text-reject line-through decoration-reject px-1 mx-0.5 font-medium"
+                          title="리라이팅 시 생략 또는 매경 기사체로 치환된 원문 표현"
+                        >
+                          {part}
+                        </span>
+                      );
+                    }
+                    return <span key={pIdx}>{part}</span>;
+                  })}
+                  <span className="ml-1 inline-flex items-center rounded bg-[#B26A00] px-1.5 py-0.2 text-[10px] font-bold text-surface align-middle whitespace-nowrap select-none">
+                    {isMovedPara
+                      ? `⇄ 단락${String(targetMovedIdx + 1).padStart(2, "0")} 이동·리라이팅`
+                      : rIdx === 0 && sIdx === 0
+                      ? "✎ 리드문 리라이팅"
+                      : "✎ 리라이팅됨"}
+                  </span>
+                </span>
+              );
+            }
           }
 
           return (
@@ -3708,11 +3883,15 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 border-b-hairline border-line bg-surface">
                         <div className="flex items-center gap-2">
                           <span className="inline-flex h-[22px] items-center rounded bg-ink px-2.5 text-[11px] font-bold text-surface whitespace-nowrap">
-                            왼쪽 화면 · 원문 {effectiveMode === "minimal" ? "(교정 표시)" : "보도자료"}
+                            왼쪽 화면 · 원문 {effectiveMode === "minimal" ? "(교정 표시)" : "보도자료 (리라이팅 구간 표시)"}
                           </span>
-                          {effectiveMode === "minimal" && (
+                          {effectiveMode === "minimal" ? (
                             <span className="text-[11px] text-ink-muted break-keep">
                               <strong className="text-reject">빨간줄</strong> 클릭 → <strong className="text-pass">초록색 교체</strong>
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-ink-muted break-keep">
+                              <strong className="text-hold">주황색·취소선</strong> = 리라이팅·단락 이동된 원문
                             </span>
                           )}
                         </div>

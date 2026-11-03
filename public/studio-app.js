@@ -470,7 +470,34 @@ function buildClientFallbackDraft(compName, mode, rawText) {
     };
   }
 
-  const bodyParas = paras.length > 0 ? [...paras] : [sanitized];
+  // 모드 2(전면 리라이팅) & 모드 3(비교·기획): 문장 어미·영문 병기·부사어를 기사체로 재구성하고 중간 문단을 재배치
+  const bodyParas = (paras.length > 0 ? [...paras] : [sanitized]).map((p, idx) => {
+    let rw = p
+      .replace(/\([A-Za-z0-9\s,&·-]{6,}\)/g, "")
+      .replace(/국제올림픽위원회\(IOC\)의/g, "국제올림픽위원회(IOC)")
+      .replace(/세계\s*최초로?/g, "독자 기술로")
+      .replace(/국내\s*최초로?/g, "자체 기술로")
+      .replace(/업계\s*최초로?/g, "선도적으로")
+      .replace(/최초로\s+도입된다/g, "처음 도입된다")
+      .replace(/활용해\s+/g, "기반으로 ")
+      .replace(/다양한\s+활동을\s+선보일\s+계획이다\./g, "현장 체험·지원 프로그램을 운영한다.")
+      .replace(/선보일\s+계획이다\./g, "선보인다.")
+      .replace(/구현하도록\s+설계됐다\./g, "구현했다.")
+      .replace(/설계됐다\./g, "구성됐다.")
+      .replace(/설계했다\./g, "구성했다.")
+      .replace(/간소화했다\./g, "단축했다.")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (idx === 0) {
+      const m = /^([가-힣A-Za-z0-9㈜()\s]+?(?:은|는|이|가))\s+(\d{1,2}월\s*\d{1,2}일부터\s*[^‘'“"]+에서\s*열리는\s*[‘'“"][^’'”"]+[’'”"]에)\s+(.+)$/.exec(
+        rw.replace(/\.$/, "")
+      );
+      if (m) {
+        rw = `${m[2]} ${m[1]} ${m[3]}.`;
+      }
+    }
+    return rw;
+  });
   if (bodyParas.length >= 3) {
     const tmp = bodyParas[1];
     bodyParas[1] = bodyParas[2];
@@ -1903,6 +1930,29 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   const [highlightedTerm, setHighlightedTerm] = useState(null);
   const [showTitleCandidatesToggle, setShowTitleCandidatesToggle] = useState(false);
 
+  // 화면 사이 크기 조절(Resizable Split & Sidebar) 상태
+  const [leftSidebarWidth, setLeftSidebarWidth] = useState(330);
+  const [rightSidebarWidth, setRightSidebarWidth] = useState(340);
+  const [splitLeftRatio, setSplitLeftRatio] = useState(50);
+
+  function startHorizontalResize(e, onMoveDelta) {
+    e.preventDefault();
+    const startX = e.clientX;
+    function onMouseMove(moveEvent) {
+      onMoveDelta(moveEvent.clientX - startX, moveEvent);
+    }
+    function onMouseUp() {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    }
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  }
+
   const [title, setTitle] = useState(data.article?.title || "");
   const [subtitle, setSubtitle] = useState(data.article?.subtitle || "");
   const [body, setBody] = useState(data.article?.body || "");
@@ -2863,15 +2913,13 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
             (m) => m.inserted && (sent === m.text || sent.includes(m.text))
           );
 
-          if (matchedSug) {
-            const isReplaced = Boolean(matchedSug.selectedAltId);
+          // 1단계 최소 수정 핵심 원칙: 사용자가 실제로 교정을 선택(isReplaced)한 문장만 초록색으로 교체해 보여주고,
+          // 아직 선택하지 않은 문장은 원문 그대로 깨끗하게 유지!
+          if (matchedSug && Boolean(matchedSug.selectedAltId)) {
             const selAlt = matchedSug.alternatives.find(
               (a) => a.id === matchedSug.selectedAltId
             );
-            const displayText =
-              isReplaced && selAlt
-                ? selAlt.text
-                : matchedSug.alternatives[0]?.text || sent;
+            const displayText = selAlt ? selAlt.text : sent;
 
             return (
               <span
@@ -2881,14 +2929,10 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                   const el = document.getElementById(
                     `sug-card-${matchedSug.id}`
                   );
-                  el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
                 }}
-                title="클릭하면 왼쪽 원문 교정 위치에서 다른 버전을 선택할 수 있습니다"
-                className={`mr-1.5 cursor-pointer rounded px-1.5 py-0.5 transition-colors inline ${
-                  isReplaced
-                    ? "bg-pass-bg text-pass font-semibold border-b-2 border-pass"
-                    : "bg-[#FEF9C3] text-ink font-medium border-b border-[#EAB308]"
-                }`}
+                title="교체된 문장입니다 (클릭 시 왼쪽 원문 위치에서 다른 버전 선택 또는 원문 복원)"
+                className="mr-1.5 cursor-pointer rounded px-1.5 py-0.5 transition-colors inline bg-pass-bg text-pass font-semibold border-b-2 border-pass"
               >
                 {displayText}
               </span>
@@ -2924,12 +2968,12 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
       .split(/(?<=[.!?다요])\s+/)
       .map((s) => s.trim())
       .filter(Boolean);
-    const sameRaw = rawParagraphs[paraIdx] || "";
+    const sameRaw = (rawParagraphs[paraIdx] || "").replace(/\s+/g, " ").trim();
     return (
       <div className="leading-[28px] text-[15px] text-ink">
         {sents.map((sent, sIdx) => {
-          const probe = sent.slice(0, Math.min(20, Math.max(10, Math.floor(sent.length * 0.55))));
-          const sameAsRaw = probe.length >= 10 && sameRaw.includes(probe);
+          const cleanSent = sent.replace(/\s+/g, " ").trim();
+          const sameAsRaw = cleanSent.length >= 8 && sameRaw.includes(cleanSent);
           if (!sameAsRaw) {
             return (
               <span
@@ -3033,10 +3077,14 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
         </div>
       )}
 
-      <main className="mx-auto flex w-full max-w-[1640px] flex-1 gap-4 p-4 items-start">
+      <main className="mx-auto flex w-full max-w-[1680px] flex-1 gap-0 p-4 items-start">
         {/* 4. 왼쪽 사이드: 📌 취재 팩트 메모장 (기본 활성) + 단계 진행 타임라인 탭 */}
         {!wideEditorMode && (
-          <aside className="w-[350px] shrink-0 sticky top-4 space-y-3">
+          <>
+            <aside
+              style={{ width: `${leftSidebarWidth}px` }}
+              className="shrink-0 sticky top-4 space-y-3"
+            >
             <div className="rounded-lg border-hairline border-line bg-surface overflow-hidden">
               <div className="grid grid-cols-2 border-b-hairline border-line bg-surface-subtle p-1 gap-1">
                 <button
@@ -3234,10 +3282,31 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
               )}
             </div>
           </aside>
+          {/* 왼쪽 사이드바 ↔ 중앙 편집기 사이 너비 조절 핸들 */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="좌우로 드래그하여 취재 팩트 메모장 너비 조절 (더블클릭: 기본 크기 복원)"
+            onDoubleClick={() => setLeftSidebarWidth(340)}
+            onMouseDown={(e) => {
+              const startWidth = leftSidebarWidth;
+              startHorizontalResize(e, (dx) => {
+                setLeftSidebarWidth(Math.min(500, Math.max(250, startWidth + dx)));
+              });
+            }}
+            className="w-3.5 shrink-0 self-stretch cursor-col-resize flex flex-col items-center justify-center group select-none"
+          >
+            <div className="w-[3px] h-16 rounded-full bg-line group-hover:bg-primary transition-colors flex items-center justify-center">
+              <span className="opacity-0 group-hover:opacity-100 rounded bg-primary px-1 py-0.5 text-[9px] font-bold text-surface whitespace-nowrap pointer-events-none">
+                ↔
+              </span>
+            </div>
+          </div>
+          </>
         )}
 
         {/* 중앙 메인 영역: 상단 복잡한 요소를 덜어내고 제목·부제 → [원문 전체] → [그 아래 수정된 내용] 순서로 한눈에 배치 */}
-        <section className="flex-1 min-w-[580px] flex flex-col gap-4">
+        <section className="flex-1 min-w-[540px] flex flex-col gap-4">
           {selectedStage && (
             <div className="rounded-lg border-hairline border-primary bg-surface p-4 space-y-2">
               <div className="flex items-center justify-between border-b-hairline border-line pb-2">
@@ -3431,11 +3500,11 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                 </div>
               )}
 
-              {/* 3. 본문 영역: 기본값 = [전체 문장으로 보기 (통문장 좌우 2분할)], 옵션 = [문단으로 나눠서 보기] / [수정본만 단독 보기] */}
+              {/* 3. 본문 영역: 기본값 = [전체 문장 비교 (통문장 좌우 2분할)], 옵션 = [문단별 편집] / [완성본만 보기] */}
               <div className="p-4 space-y-3 flex-1">
-                {/* 상단 본문 툴바 (간결하고 직관적인 전문가용 컨트롤 바) */}
-                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border-hairline border-line bg-surface-subtle px-3.5 py-2.5">
-                  <div className="flex flex-wrap items-center gap-2.5">
+                {/* 상단 본문 툴바 (불필요한 중복 버튼을 제거한 1줄 클린 컨트롤 바) */}
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border-hairline border-line bg-surface-subtle px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <div className="inline-flex items-center rounded-md border-hairline border-line bg-surface p-0.5">
                       <button
                         type="button"
@@ -3443,13 +3512,13 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                           setCleanFullView(false);
                           setParagraphMode(false);
                         }}
-                        className={`h-[28px] rounded px-3 text-[12px] font-bold whitespace-nowrap transition-colors ${
+                        className={`h-[28px] rounded px-2.5 text-[12px] font-bold whitespace-nowrap transition-colors ${
                           !cleanFullView && !paragraphMode
                             ? "bg-primary text-surface"
                             : "text-ink-muted hover:text-ink"
                         }`}
                       >
-                        📄 전체 문장으로 보기 (기본)
+                        📄 전체 문장 비교 (기본)
                       </button>
                       <button
                         type="button"
@@ -3458,33 +3527,33 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                           setParagraphMode(true);
                           setIsDirectTyping(false);
                         }}
-                        className={`h-[28px] rounded px-3 text-[12px] font-bold whitespace-nowrap transition-colors ${
+                        className={`h-[28px] rounded px-2.5 text-[12px] font-bold whitespace-nowrap transition-colors ${
                           !cleanFullView && paragraphMode
                             ? "bg-primary text-surface"
                             : "text-ink-muted hover:text-ink"
                         }`}
                       >
-                        📑 문단으로 나눠서 보기
+                        📑 문단별 편집
                       </button>
                       <button
                         type="button"
                         onClick={() => setCleanFullView(true)}
-                        className={`h-[28px] rounded px-3 text-[12px] font-bold whitespace-nowrap transition-colors ${
+                        className={`h-[28px] rounded px-2.5 text-[12px] font-bold whitespace-nowrap transition-colors ${
                           cleanFullView
                             ? "bg-primary text-surface"
                             : "text-ink-muted hover:text-ink"
                         }`}
                       >
-                        📋 수정본만 크게 보기
+                        📋 완성본만 보기
                       </button>
                     </div>
 
-                    <span className="text-[12px] text-ink-muted whitespace-nowrap">
-                      총 {bodyParagraphs.length}문단 · 공백 포함 {bodyCharCount.toLocaleString()}자
+                    <span className="text-[11px] font-medium text-ink-muted whitespace-nowrap">
+                      {bodyParagraphs.length}문단 · {bodyCharCount.toLocaleString()}자
                     </span>
 
                     {quickCopyFeedback && (
-                      <span className="inline-flex items-center rounded bg-pass-bg border-hairline border-pass px-2.5 py-0.5 text-[11px] font-bold text-pass whitespace-nowrap">
+                      <span className="inline-flex items-center rounded bg-pass-bg border-hairline border-pass px-2 py-0.5 text-[11px] font-bold text-pass whitespace-nowrap">
                         {quickCopyFeedback}
                       </span>
                     )}
@@ -3500,7 +3569,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                           <button
                             type="button"
                             onClick={allApplied ? handleRevertAllSuggestions : handleApplyAllRecommendedSuggestions}
-                            className={`inline-flex h-[28px] items-center whitespace-nowrap rounded-md px-3 text-[12px] font-bold hover:opacity-90 ${
+                            className={`inline-flex h-[28px] items-center whitespace-nowrap rounded-md px-2.5 text-[12px] font-bold hover:opacity-90 ${
                               allApplied
                                 ? "border-hairline border-reject bg-reject-bg text-reject"
                                 : "bg-[#F5B041] text-ink"
@@ -3514,19 +3583,11 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                             <button
                               type="button"
                               onClick={handleRevertAllSuggestions}
-                              className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md border-hairline border-reject bg-surface px-2.5 text-[11px] font-bold text-reject hover:bg-reject-bg"
+                              className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md border-hairline border-reject bg-surface px-2 text-[11px] font-bold text-reject hover:bg-reject-bg"
                             >
-                              ↩ 교정 일괄 해제
+                              ↩ 일괄 해제
                             </button>
                           )}
-                          <button
-                            type="button"
-                            disabled={aiProofreadLoading}
-                            onClick={handleRegenerateAiMinimalSuggestions}
-                            className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md border-hairline border-primary bg-surface px-2.5 text-[11px] font-bold text-primary hover:bg-primary-subtle disabled:opacity-50"
-                          >
-                            {aiProofreadLoading ? "✨ AI 최소 교열 중..." : "✨ Claude 4.6 자연스러운 최소 교열"}
-                          </button>
                         </>
                       );
                     })()}
@@ -3536,22 +3597,22 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                         onClick={rotateMiddleParagraphs}
                         className="h-[28px] whitespace-nowrap rounded border-hairline border-line bg-surface px-2.5 text-[11px] font-medium hover:bg-surface-subtle"
                       >
-                        ⇄ 중간 문단 재배치
+                        ⇄ 문단 재배치
                       </button>
                     )}
                     <button
                       type="button"
                       onClick={() => handleQuickCopyRewritten("body")}
-                      className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md bg-pass px-3 text-[12px] font-bold text-surface hover:opacity-90"
+                      className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md bg-pass px-2.5 text-[12px] font-bold text-surface hover:opacity-90"
                     >
-                      📋 수정 완료 본문 바로 복사
+                      📋 본문 복사
                     </button>
                     <button
                       type="button"
                       onClick={() => handleQuickCopyRewritten("all")}
-                      className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md border-hairline border-primary bg-surface px-2.5 text-[11px] font-bold text-primary hover:bg-primary-subtle"
+                      className="inline-flex h-[28px] items-center whitespace-nowrap rounded-md border-hairline border-line bg-surface px-2 text-[11px] font-semibold text-ink hover:border-primary hover:text-primary"
                     >
-                      📋 제목+본문 전체 복사
+                      전체 복사
                     </button>
                   </div>
                 </div>
@@ -3637,10 +3698,13 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                     </div>
                   </div>
                 ) : (
-                  /* 좌우 2분할 메인 그리드 (기본: 전체 문장으로 보기 / 옵션: 문단으로 나눠서 보기) */
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+                  /* 좌우 2분할 메인 화면 (가운데 드래그 바 ↔ 로 좌우 화면 비율 자유 조절) */
+                  <div className="flex flex-col lg:flex-row items-stretch">
                     {/* 왼쪽 화면: 원문에 교정 표시 */}
-                    <div className="rounded-lg border-hairline border-line bg-surface-subtle overflow-hidden flex flex-col">
+                    <div
+                      style={{ width: `calc(${splitLeftRatio}% - 8px)` }}
+                      className="w-full lg:shrink-0 rounded-lg border-hairline border-line bg-surface-subtle overflow-hidden flex flex-col"
+                    >
                       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 border-b-hairline border-line bg-surface">
                         <div className="flex items-center gap-2">
                           <span className="inline-flex h-[22px] items-center rounded bg-ink px-2.5 text-[11px] font-bold text-surface whitespace-nowrap">
@@ -3648,78 +3712,70 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                           </span>
                           {effectiveMode === "minimal" && (
                             <span className="text-[11px] text-ink-muted break-keep">
-                              <strong className="text-reject">빨간줄 문장</strong> 클릭 → 버전 선택 시 <strong className="text-pass">초록색 교체</strong>
+                              <strong className="text-reject">빨간줄</strong> 클릭 → <strong className="text-pass">초록색 교체</strong>
                             </span>
                           )}
                         </div>
                         <span className="text-[11px] font-semibold text-ink-muted whitespace-nowrap">
-                          {paragraphMode ? `문단별 보기 (${rawParagraphs.length}단락)` : "전체 문장 흐름"}
+                          {paragraphMode ? `${rawParagraphs.length}단락` : `${Math.round(splitLeftRatio)}%`}
                         </span>
                       </div>
-                      <div className="p-3.5 max-h-[780px] overflow-y-auto">
+                      <div className="p-3.5 max-h-[780px] overflow-y-auto flex-1">
                         {renderOriginalWithHighlightsStudio()}
                       </div>
                     </div>
 
+                    {/* 가운데 좌우 화면 비율 조절 드래그 핸들 (↔) */}
+                    <div
+                      role="separator"
+                      aria-orientation="vertical"
+                      title="좌우로 드래그하여 원문·수정본 화면 비율 조절 (더블클릭: 50:50 초기화)"
+                      onDoubleClick={() => setSplitLeftRatio(50)}
+                      onMouseDown={(e) => {
+                        const container = e.currentTarget.parentElement;
+                        const totalWidth = container ? container.getBoundingClientRect().width : 900;
+                        const startRatio = splitLeftRatio;
+                        startHorizontalResize(e, (dx) => {
+                          const deltaPct = (dx / Math.max(400, totalWidth)) * 100;
+                          setSplitLeftRatio(Math.min(72, Math.max(28, Math.round(startRatio + deltaPct))));
+                        });
+                      }}
+                      className="hidden lg:flex w-4 shrink-0 self-stretch cursor-col-resize flex-col items-center justify-center group select-none"
+                    >
+                      <div className="w-[3px] h-full max-h-[160px] rounded-full bg-line group-hover:bg-primary transition-colors flex items-center justify-center">
+                        <span className="rounded-full border-hairline border-line bg-surface group-hover:border-primary group-hover:bg-primary group-hover:text-surface px-1 py-1 text-[10px] font-bold text-ink-muted leading-none shadow-none">
+                          ↔
+                        </span>
+                      </div>
+                    </div>
+
                     {/* 오른쪽 화면: 수정 완료된 기사 전문 */}
-                    <div className="rounded-lg border-hairline border-primary bg-surface overflow-hidden flex flex-col">
+                    <div className="flex-1 min-w-0 rounded-lg border-hairline border-primary bg-surface overflow-hidden flex flex-col">
                       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 border-b-hairline border-line bg-primary-subtle/50">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="inline-flex h-[22px] items-center rounded bg-primary px-2.5 text-[11px] font-bold text-surface whitespace-nowrap">
                             오른쪽 화면 · 수정 완료된 기사 전문
                           </span>
-                          {!paragraphMode && (
-                            <div className="inline-flex items-center rounded border-hairline border-line bg-surface p-0.5">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setIsDirectTyping(false);
-                                  setRightPaneCleanText(false);
-                                }}
-                                className={`h-[20px] rounded px-2 text-[10px] font-bold whitespace-nowrap ${
-                                  !isDirectTyping && !rightPaneCleanText
-                                    ? "bg-primary text-surface"
-                                    : "text-ink-muted hover:text-ink"
-                                }`}
-                              >
-                                ✨ 변경 구간 표시
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setIsDirectTyping(false);
-                                  setRightPaneCleanText(true);
-                                }}
-                                className={`h-[20px] rounded px-2 text-[10px] font-bold whitespace-nowrap ${
-                                  !isDirectTyping && rightPaneCleanText
-                                    ? "bg-primary text-surface"
-                                    : "text-ink-muted hover:text-ink"
-                                }`}
-                              >
-                                📄 순수 원고만
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setIsDirectTyping(true)}
-                                className={`h-[20px] rounded px-2 text-[10px] font-bold whitespace-nowrap ${
-                                  isDirectTyping
-                                    ? "bg-primary text-surface"
-                                    : "text-ink-muted hover:text-ink"
-                                }`}
-                              >
-                                ✎ 직접 타이핑 수정
-                              </button>
-                            </div>
-                          )}
+                          <span className="text-[11px] text-ink-muted whitespace-nowrap">
+                            {effectiveMode === "minimal"
+                              ? "교정 선택 문장만 초록색 반영"
+                              : "리라이팅·재배치 문장 노란색 표시"}
+                          </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => handleQuickCopyRewritten("body")}
-                            className="inline-flex h-[22px] items-center whitespace-nowrap rounded bg-pass px-2.5 text-[11px] font-bold text-surface hover:opacity-90"
-                          >
-                            📋 본문 바로 복사
-                          </button>
+                          {!paragraphMode && (
+                            <button
+                              type="button"
+                              onClick={() => setIsDirectTyping((v) => !v)}
+                              className={`inline-flex h-[22px] items-center whitespace-nowrap rounded border-hairline px-2 text-[11px] font-semibold transition-colors ${
+                                isDirectTyping
+                                  ? "border-primary bg-primary text-surface"
+                                  : "border-line bg-surface text-ink hover:border-primary hover:text-primary"
+                              }`}
+                            >
+                              {isDirectTyping ? "✓ 직접 편집 완료" : "✎ 직접 타이핑 편집"}
+                            </button>
+                          )}
                           <span
                             className={`text-[11px] font-semibold whitespace-nowrap ${
                               isBodyInRange ? "text-pass" : "text-hold"
@@ -4010,7 +4066,31 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
 
         {/* 오른쪽 사이드: 상단 규정리포트/증빙/출처 + 오른쪽 하단 💬 AI 채팅으로 기사 수정 */}
         {!wideEditorMode && (
-          <aside className="w-[350px] shrink-0 sticky top-4 space-y-3">
+          <>
+            {/* 중앙 편집기 ↔ 오른쪽 사이드바 사이 너비 조절 핸들 */}
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              title="좌우로 드래그하여 규정·AI 채팅 사이드바 너비 조절 (더블클릭: 기본 크기 복원)"
+              onDoubleClick={() => setRightSidebarWidth(340)}
+              onMouseDown={(e) => {
+                const startWidth = rightSidebarWidth;
+                startHorizontalResize(e, (dx) => {
+                  setRightSidebarWidth(Math.min(500, Math.max(250, startWidth - dx)));
+                });
+              }}
+              className="w-3.5 shrink-0 self-stretch cursor-col-resize flex flex-col items-center justify-center group select-none"
+            >
+              <div className="w-[3px] h-16 rounded-full bg-line group-hover:bg-primary transition-colors flex items-center justify-center">
+                <span className="opacity-0 group-hover:opacity-100 rounded bg-primary px-1 py-0.5 text-[9px] font-bold text-surface whitespace-nowrap pointer-events-none">
+                  ↔
+                </span>
+              </div>
+            </div>
+            <aside
+              style={{ width: `${rightSidebarWidth}px` }}
+              className="shrink-0 sticky top-4 space-y-3"
+            >
             <div className="rounded-lg border-hairline border-line bg-surface overflow-hidden">
               <div className="grid grid-cols-4 border-b-hairline border-line bg-surface-subtle p-1 gap-1">
                 {[
@@ -4203,6 +4283,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
               ))}
             </div>
           </aside>
+          </>
         )}
       </main>
     </div>

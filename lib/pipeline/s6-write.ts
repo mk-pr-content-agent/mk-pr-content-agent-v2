@@ -1155,18 +1155,47 @@ function buildDeterministicDraft(
 
   if (nonQuoteParagraphs.length > 0) {
     const firstP = nonQuoteParagraphs[0]!;
-    if (firstP.startsWith(company) || firstP.includes(company)) {
-      const leadAdjusted = firstP.replace(
-        /^(.*?)(연다|출시한다|개최한다)\./,
-        `$1$2고 밝혔다.`
+    let leadRewritten = firstP
+      .replace(/\([A-Za-z0-9\s,&.'-]{6,}\)/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (leadRewritten.startsWith(company)) {
+      const rest = leadRewritten
+        .slice(company.length)
+        .replace(/^(?:은|는|이|가)\s*/, "");
+      const m = /^(\d{1,2}월\s*\d{1,2}일부터\s*[^‘'"]+?[‘'"][^’'"]+[’'"]에)\s*(.+)$/.exec(
+        rest
       );
-      bodyParagraphs.push(leadAdjusted);
+      if (m) {
+        leadRewritten = `${m[1]} ${company}가 ${m[2]}`;
+      }
+    }
+    leadRewritten = leadRewritten
+      .replace(/참여한다\.$/, "참여해 공식 기술·서비스 지원에 나선다.")
+      .replace(/^(.*?)(연다|출시한다|개최한다)\.$/, "$1$2고 밝혔다.");
+
+    if (leadRewritten.startsWith(company) || leadRewritten.includes(company)) {
+      bodyParagraphs.push(leadRewritten);
     } else {
-      bodyParagraphs.push(`${company}${repSuffix}는 ${firstP}`);
+      bodyParagraphs.push(`${company}${repSuffix}는 ${leadRewritten}`);
     }
 
     for (let i = 1; i < nonQuoteParagraphs.length; i++) {
-      bodyParagraphs.push(nonQuoteParagraphs[i]!);
+      let rw = nonQuoteParagraphs[i]!
+        .replace(/\([A-Za-z0-9\s,&.'-]{6,}\)/g, "")
+        .replace(/활용해\s+/g, "기반으로 ")
+        .replace(/선보일\s*계획이다\.$/g, "선보인다.")
+        .replace(/전달할\s*예정이다\.$/g, "전달한다.")
+        .replace(/마련할\s*계획이다\.$/g, "운영한다.")
+        .replace(/지원할\s*예정이다\.$/g, "지원한다.")
+        .replace(/운영할\s*예정이다\.$/g, "운영한다.")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (i === 2 && !rw.startsWith("한편 ") && !rw.startsWith("특히 ") && !rw.startsWith("아울러 ")) {
+        rw = `이와 함께 ${rw}`;
+      }
+      bodyParagraphs.push(rw);
     }
   }
 

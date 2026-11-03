@@ -231,6 +231,31 @@ export default function JobWorkspacePage() {
   );
   const [showTitleCandidatesToggle, setShowTitleCandidatesToggle] =
     React.useState(false);
+  // 화면 사이 사이즈(너비·비율) 드래그 조절 상태
+  const [leftSidebarWidth, setLeftSidebarWidth] = React.useState(340);
+  const [rightSidebarWidth, setRightSidebarWidth] = React.useState(340);
+  const [splitLeftRatio, setSplitLeftRatio] = React.useState(50);
+
+  function startHorizontalResize(
+    e: React.MouseEvent,
+    onDelta: (dx: number, moveEv: MouseEvent) => void
+  ) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const onMove = (moveEv: MouseEvent) => {
+      onDelta(moveEv.clientX - startX, moveEv);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
   // CMS 복사 옵션 및 미리보기 상태 (PRD F14)
   const [blankLineCopy, setBlankLineCopy] = React.useState(true);
   const [includeBylineCopy, setIncludeBylineCopy] = React.useState(false);
@@ -423,19 +448,41 @@ export default function JobWorkspacePage() {
                 s
               ))
           ) {
-            const clean = s.replace(/\.$/, "");
-            const v1 = clean
+            const clean = s
+              .replace(/"([^"]+)"/g, "“$1”")
+              .replace(/'([^']+)'/g, "‘$1’")
               .replace(/(\d+)\s*평(?!\s*\()/g, (_, n) => `약 ${Math.round(Number(n) * 3.3)}㎡(${n}평)`)
               .replace(/세계\s*최초로?/g, "독자 기술로")
+              .replace(/국내\s*최초로?/g, "자체 기술로")
+              .replace(/업계\s*최초로?/g, "선도적으로")
+              .replace(/최초로\s+도입된다/g, "처음 도입된다")
               .replace(/세계\s*최고\s*수준의/g, "고도화된")
               .replace(/자랑합니다/g, "갖췄다")
-              .replace(/나선다$/, "나선다고 밝혔다")
-              .replace(/설계됐다$/, "설계된 것이 특징이다") + ".";
-            const v2 = clean
-              .replace(/선보이며\s+/, "출시하고 ")
-              .replace(/밝혔다$/, "전했다")
-              .replace(/다$/, "다는 설명이다") + ".";
-            const v3 = clean.replace(/특히\s+|이번\s+/g, "").replace(/다$/, "고 강조했다") + ".";
+              .replace(/\.$/, "")
+              .trim();
+            const trimmedEng = clean
+              .replace(/\([A-Za-z0-9\s,&·-]{6,}\)/g, "")
+              .replace(/국제올림픽위원회\(IOC\)의/g, "국제올림픽위원회(IOC)")
+              .replace(/\s+/g, " ")
+              .trim();
+            const v1 =
+              (trimmedEng !== clean
+                ? trimmedEng
+                : trimmedEng
+                    .replace(/계획이다$/, "예정이다")
+                    .replace(/설계됐다$/, "구현됐다")
+                    .replace(/설계했다$/, "구성했다")
+                    .replace(/나선다$/, "시장을 공략한다")) + ".";
+            const v2 =
+              trimmedEng
+                .replace(/선보이며\s+/, "출시하고 ")
+                .replace(/활용해\s+/, "통해 ")
+                .replace(/선보일\s+계획이다$/, "선보인다")
+                .replace(/밝혔다$/, "전했다") + ".";
+            const v3 =
+              trimmedEng
+                .replace(/^특히\s+|^이번\s+/g, "")
+                .replace(/다양한\s+활동을\s+선보일\s+계획이다$/, "체험·지원 프로그램을 운영한다") + ".";
             fallbackSugs.push({
               id: `sug-fb-${seq++}`,
               paraIdx: pIdx,
@@ -2082,15 +2129,13 @@ export default function JobWorkspacePage() {
               (sent === m.text || sent.includes(m.text))
           );
 
-          if (matchedSug) {
-            const isReplaced = Boolean(matchedSug.selectedAlternativeId);
+          // 1단계 최소 수정 핵심 원칙: 사용자가 실제로 교정을 선택(isReplaced)한 문장만 초록색으로 교체해 보여주고,
+          // 아직 선택하지 않은 문장은 원문 그대로 깨끗하게 유지!
+          if (matchedSug && Boolean(matchedSug.selectedAlternativeId)) {
             const selectedAlt = matchedSug.alternatives.find(
               (a) => a.id === matchedSug.selectedAlternativeId
             );
-            const displayText =
-              isReplaced && selectedAlt
-                ? selectedAlt.text
-                : matchedSug.alternatives[0]?.text ?? sent;
+            const displayText = selectedAlt ? selectedAlt.text : sent;
 
             return (
               <span
@@ -2100,14 +2145,10 @@ export default function JobWorkspacePage() {
                   const el = document.getElementById(
                     `sug-card-${matchedSug.id}`
                   );
-                  el?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
                 }}
-                title="클릭하면 왼쪽 원문 교정 위치에서 다른 버전을 선택할 수 있습니다"
-                className={`mr-1.5 cursor-pointer rounded px-1.5 py-0.5 transition-colors inline ${
-                  isReplaced
-                    ? "bg-pass-bg text-pass font-semibold border-b-2 border-pass"
-                    : "bg-[#FEF9C3] text-ink font-medium border-b border-[#EAB308]"
-                }`}
+                title="교체된 문장입니다 (클릭 시 왼쪽 원문 위치에서 다른 버전 선택 또는 원문 복원)"
+                className="mr-1.5 cursor-pointer rounded px-1.5 py-0.5 transition-colors inline bg-pass-bg text-pass font-semibold border-b-2 border-pass"
               >
                 {displayText}
               </span>
@@ -2153,12 +2194,12 @@ export default function JobWorkspacePage() {
       <div className="leading-[28px] text-[15px] text-ink">
         {sentences.map((sent, sIdx) => {
           const cleanSent = sent.replace(/\s+/g, " ").trim();
+          const existsVerbatimInSamePara =
+            cleanSent.length >= 8 && sameIdxRawPara.replace(/\s+/g, " ").includes(cleanSent);
           const probe = cleanSent.slice(
             0,
             Math.min(24, Math.max(10, Math.floor(cleanSent.length * 0.55)))
           );
-          const existsVerbatimInSamePara =
-            probe.length >= 10 && sameIdxRawPara.includes(probe);
           const existsInOtherRawPara =
             !existsVerbatimInSamePara &&
             probe.length >= 10 &&
@@ -2373,10 +2414,15 @@ export default function JobWorkspacePage() {
       )}
 
       {/* 3단 메인 워크스페이스 (좌측 사이드: 취재 팩트 메모장·단계 타임라인 / 중앙: 원문 전체→아래 수정본 편집기 / 우측: 규정·우측 하단 AI 채팅) */}
-      <main className="mx-auto flex w-full max-w-[1680px] flex-1 gap-4 p-4">
-        {/* 1) 왼쪽 사이드바 (350px): 📌 취재 팩트 메모장 (기본 활성) + 단계 진행 타임라인 탭 */}
+      <main className="mx-auto flex w-full max-w-[1680px] flex-1 gap-0 p-4">
+        {/* 1) 왼쪽 사이드바: 📌 취재 팩트 메모장 (기본 활성) + 단계 진행 타임라인 탭 */}
         {!wideEditorMode && (
-          <aside id="left-fact-sidebar" className="w-[350px] shrink-0 flex flex-col gap-3">
+          <>
+          <aside
+            id="left-fact-sidebar"
+            style={{ width: `${leftSidebarWidth}px` }}
+            className="shrink-0 flex flex-col gap-3"
+          >
             <Card className="p-0 overflow-hidden">
               <div className="grid grid-cols-2 border-b-hairline border-line bg-surface-subtle p-1 gap-1">
                 <button
@@ -2641,10 +2687,31 @@ export default function JobWorkspacePage() {
               )}
             </Card>
           </aside>
+          {/* 왼쪽 사이드바 ↔ 중앙 편집기 사이 너비 조절 핸들 */}
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            title="좌우로 드래그하여 취재 팩트 메모장 너비 조절 (더블클릭: 기본 크기 복원)"
+            onDoubleClick={() => setLeftSidebarWidth(340)}
+            onMouseDown={(e) => {
+              const startWidth = leftSidebarWidth;
+              startHorizontalResize(e, (dx) => {
+                setLeftSidebarWidth(Math.min(500, Math.max(250, startWidth + dx)));
+              });
+            }}
+            className="w-3.5 shrink-0 self-stretch cursor-col-resize flex flex-col items-center justify-center group select-none"
+          >
+            <div className="w-[3px] h-16 rounded-full bg-line group-hover:bg-primary transition-colors flex items-center justify-center">
+              <span className="opacity-0 group-hover:opacity-100 rounded bg-primary px-1 py-0.5 text-[9px] font-bold text-surface whitespace-nowrap pointer-events-none">
+                ↔
+              </span>
+            </div>
+          </div>
+          </>
         )}
 
-        {/* 중앙: 기사 편집기 (최소 560px, flex-1) */}
-        <section className="flex-1 min-w-[560px] flex flex-col gap-4">
+        {/* 중앙: 기사 편집기 (최소 540px, flex-1) */}
+        <section className="flex-1 min-w-[540px] flex flex-col gap-4">
           {/* 단계 클릭 시 표시되는 단계별 실행 상세 결과 카드 */}
           {selectedStage && (() => {
             const stageRecord = data?.stages.find(
@@ -2993,11 +3060,11 @@ export default function JobWorkspacePage() {
                     </div>
                   )}
 
-                {/* 2. 본문 영역: 기본값 = [전체 문장으로 보기 (통문장 좌우 2분할)], 옵션 = [문단으로 나눠서 보기] / [수정본만 크게 보기] */}
+                {/* 2. 본문 영역: 기본값 = [전체 문장 비교 (통문장 좌우 2분할)], 옵션 = [문단별 편집] / [완성본만 보기] */}
                 <div className="p-4 space-y-3 flex-1 flex flex-col">
-                  {/* 편집기 상단 보조 툴바 */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border-hairline border-line bg-surface-subtle px-3.5 py-2.5">
-                    <div className="flex flex-wrap items-center gap-2.5">
+                  {/* 편집기 상단 보조 툴바 (불필요한 중복 버튼을 제거한 1줄 클린 컨트롤 바) */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border-hairline border-line bg-surface-subtle px-3 py-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <div className="inline-flex items-center rounded-md border-hairline border-line bg-surface p-0.5">
                         <button
                           type="button"
@@ -3005,13 +3072,13 @@ export default function JobWorkspacePage() {
                             setCleanFullView(false);
                             setParagraphMode(false);
                           }}
-                          className={`h-[28px] rounded px-3 text-[12px] font-bold whitespace-nowrap transition-colors ${
+                          className={`h-[28px] rounded px-2.5 text-[12px] font-bold whitespace-nowrap transition-colors ${
                             !cleanFullView && !paragraphMode
                               ? "bg-primary text-surface"
                               : "text-ink-muted hover:text-ink"
                           }`}
                         >
-                          📄 전체 문장으로 보기 (기본)
+                          📄 전체 문장 비교 (기본)
                         </button>
                         <button
                           type="button"
@@ -3020,31 +3087,31 @@ export default function JobWorkspacePage() {
                             setParagraphMode(true);
                             setIsDirectTyping(false);
                           }}
-                          className={`h-[28px] rounded px-3 text-[12px] font-bold whitespace-nowrap transition-colors ${
+                          className={`h-[28px] rounded px-2.5 text-[12px] font-bold whitespace-nowrap transition-colors ${
                             !cleanFullView && paragraphMode
                               ? "bg-primary text-surface"
                               : "text-ink-muted hover:text-ink"
                           }`}
                         >
-                          📑 문단으로 나눠서 보기
+                          📑 문단별 편집
                         </button>
                         <button
                           type="button"
                           onClick={() => setCleanFullView(true)}
-                          className={`h-[28px] rounded px-3 text-[12px] font-bold whitespace-nowrap transition-colors ${
+                          className={`h-[28px] rounded px-2.5 text-[12px] font-bold whitespace-nowrap transition-colors ${
                             cleanFullView
                               ? "bg-primary text-surface"
                               : "text-ink-muted hover:text-ink"
                           }`}
                         >
-                          📋 수정본만 크게 보기
+                          📋 완성본만 보기
                         </button>
                       </div>
-                      <span className="text-[12px] text-ink-muted whitespace-nowrap">
-                        총 {bodyParagraphs.length}문단 · 공백 포함 {bodyCharCount.toLocaleString()}자
+                      <span className="text-[11px] font-medium text-ink-muted whitespace-nowrap">
+                        {bodyParagraphs.length}문단 · {bodyCharCount.toLocaleString()}자
                       </span>
                       {quickCopyFeedback && (
-                        <span className="inline-flex items-center rounded bg-pass-bg border-hairline border-pass px-2.5 py-0.5 text-[11px] font-bold text-pass whitespace-nowrap">
+                        <span className="inline-flex items-center rounded bg-pass-bg border-hairline border-pass px-2 py-0.5 text-[11px] font-bold text-pass whitespace-nowrap">
                           {quickCopyFeedback}
                         </span>
                       )}
@@ -3066,7 +3133,7 @@ export default function JobWorkspacePage() {
                                   ? handleRevertAllSuggestions()
                                   : handleApplyAllRecommendedSuggestions())
                               }
-                              className={`inline-flex h-[28px] items-center rounded-md px-3 text-[12px] font-bold hover:opacity-90 whitespace-nowrap shrink-0 ${
+                              className={`inline-flex h-[28px] items-center rounded-md px-2.5 text-[12px] font-bold hover:opacity-90 whitespace-nowrap shrink-0 ${
                                 allApplied
                                   ? "border-hairline border-reject bg-reject-bg text-reject"
                                   : "bg-[#F59E0B] text-[#1E293B]"
@@ -3080,9 +3147,9 @@ export default function JobWorkspacePage() {
                               <button
                                 type="button"
                                 onClick={() => void handleRevertAllSuggestions()}
-                                className="inline-flex h-[28px] items-center rounded-md border-hairline border-reject bg-surface px-2.5 text-[11px] font-bold text-reject hover:bg-reject-bg whitespace-nowrap shrink-0"
+                                className="inline-flex h-[28px] items-center rounded-md border-hairline border-reject bg-surface px-2 text-[11px] font-bold text-reject hover:bg-reject-bg whitespace-nowrap shrink-0"
                               >
-                                ↩ 교정 일괄 해제
+                                ↩ 일괄 해제
                               </button>
                             )}
                           </>
@@ -3098,22 +3165,22 @@ export default function JobWorkspacePage() {
                           className="h-[28px] px-2.5 text-[11px] gap-1 whitespace-nowrap"
                         >
                           <Shuffle className="h-3 w-3 stroke-[1.5]" />
-                          <span>중간 문단 재배치</span>
+                          <span>문단 재배치</span>
                         </Button>
                       )}
                       <button
                         type="button"
                         onClick={() => void handleQuickCopyRewritten("body")}
-                        className="inline-flex h-[28px] items-center rounded-md bg-pass px-3 text-[12px] font-bold text-surface hover:opacity-90 whitespace-nowrap shrink-0"
+                        className="inline-flex h-[28px] items-center rounded-md bg-pass px-2.5 text-[12px] font-bold text-surface hover:opacity-90 whitespace-nowrap shrink-0"
                       >
-                        📋 수정 완료 본문 바로 복사
+                        📋 본문 복사
                       </button>
                       <button
                         type="button"
                         onClick={() => void handleQuickCopyRewritten("all")}
-                        className="inline-flex h-[28px] items-center rounded-md border-hairline border-primary bg-surface px-2.5 text-[11px] font-bold text-primary hover:bg-primary-subtle whitespace-nowrap shrink-0"
+                        className="inline-flex h-[28px] items-center rounded-md border-hairline border-line bg-surface px-2 text-[11px] font-semibold text-ink hover:border-primary hover:text-primary whitespace-nowrap shrink-0"
                       >
-                        📋 제목+본문 전체 복사
+                        전체 복사
                       </button>
                     </div>
                   </div>
@@ -3199,10 +3266,13 @@ export default function JobWorkspacePage() {
                       </div>
                     </div>
                   ) : (
-                    /* 좌우 2분할 메인 그리드 (기본: 전체 문장으로 보기 / 옵션: 문단으로 나눠서 보기) */
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start flex-1">
+                    /* 좌우 2분할 메인 화면 (가운데 드래그 바 ↔ 로 좌우 화면 비율 자유 조절) */
+                    <div className="flex flex-col lg:flex-row items-stretch flex-1">
                       {/* 왼쪽 화면: 원문에 교정 표시 */}
-                      <div className="rounded-lg border-hairline border-line bg-surface-subtle overflow-hidden flex flex-col">
+                      <div
+                        style={{ width: `calc(${splitLeftRatio}% - 8px)` }}
+                        className="w-full lg:shrink-0 rounded-lg border-hairline border-line bg-surface-subtle overflow-hidden flex flex-col"
+                      >
                         <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 border-b-hairline border-line bg-surface">
                           <div className="flex items-center gap-2">
                             <span className="inline-flex h-[22px] items-center rounded bg-[#334155] px-2.5 text-[11px] font-bold text-surface whitespace-nowrap">
@@ -3210,80 +3280,72 @@ export default function JobWorkspacePage() {
                             </span>
                             {effectiveMode === "minimal" && (
                               <span className="text-[11px] text-ink-muted break-keep">
-                                <strong className="text-reject">빨간줄 문장</strong> 클릭 → 버전 선택 시 <strong className="text-pass">초록색 교체</strong>
+                                <strong className="text-reject">빨간줄</strong> 클릭 → <strong className="text-pass">초록색 교체</strong>
                               </span>
                             )}
                           </div>
                           <span className="text-[11px] font-semibold text-ink-muted whitespace-nowrap">
                             {paragraphMode
-                              ? `문단별 보기 (${rawParagraphs.length}단락)`
-                              : "전체 문장 흐름"}
+                              ? `${rawParagraphs.length}단락`
+                              : `${Math.round(splitLeftRatio)}%`}
                           </span>
                         </div>
-                        <div className="p-3.5 max-h-[780px] overflow-y-auto">
+                        <div className="p-3.5 max-h-[780px] overflow-y-auto flex-1">
                           {renderOriginalFullWithRedlines()}
                         </div>
                       </div>
 
+                      {/* 가운데 좌우 화면 비율 조절 드래그 핸들 (↔) */}
+                      <div
+                        role="separator"
+                        aria-orientation="vertical"
+                        title="좌우로 드래그하여 원문·수정본 화면 비율 조절 (더블클릭: 50:50 초기화)"
+                        onDoubleClick={() => setSplitLeftRatio(50)}
+                        onMouseDown={(e) => {
+                          const container = e.currentTarget.parentElement;
+                          const totalWidth = container ? container.getBoundingClientRect().width : 900;
+                          const startRatio = splitLeftRatio;
+                          startHorizontalResize(e, (dx) => {
+                            const deltaPct = (dx / Math.max(400, totalWidth)) * 100;
+                            setSplitLeftRatio(Math.min(72, Math.max(28, Math.round(startRatio + deltaPct))));
+                          });
+                        }}
+                        className="hidden lg:flex w-4 shrink-0 self-stretch cursor-col-resize flex-col items-center justify-center group select-none"
+                      >
+                        <div className="w-[3px] h-full max-h-[160px] rounded-full bg-line group-hover:bg-primary transition-colors flex items-center justify-center">
+                          <span className="rounded-full border-hairline border-line bg-surface group-hover:border-primary group-hover:bg-primary group-hover:text-surface px-1 py-1 text-[10px] font-bold text-ink-muted leading-none">
+                            ↔
+                          </span>
+                        </div>
+                      </div>
+
                       {/* 오른쪽 화면: 수정 완료된 기사 전문 */}
-                      <div className="rounded-lg border-hairline border-primary bg-surface overflow-hidden flex flex-col">
+                      <div className="flex-1 min-w-0 rounded-lg border-hairline border-primary bg-surface overflow-hidden flex flex-col">
                         <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 border-b-hairline border-line bg-primary-subtle/50">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="inline-flex h-[22px] items-center rounded bg-primary px-2.5 text-[11px] font-bold text-surface whitespace-nowrap">
                               오른쪽 화면 · 수정 완료된 기사 전문
                             </span>
-                            {!paragraphMode && (
-                              <div className="inline-flex items-center rounded border-hairline border-line bg-surface p-0.5">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setIsDirectTyping(false);
-                                    setRightPaneCleanText(false);
-                                  }}
-                                  className={`h-[20px] rounded px-2 text-[10px] font-bold whitespace-nowrap ${
-                                    !isDirectTyping && !rightPaneCleanText
-                                      ? "bg-primary text-surface"
-                                      : "text-ink-muted hover:text-ink"
-                                  }`}
-                                >
-                                  ✨ 변경 구간 표시
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setIsDirectTyping(false);
-                                    setRightPaneCleanText(true);
-                                  }}
-                                  className={`h-[20px] rounded px-2 text-[10px] font-bold whitespace-nowrap ${
-                                    !isDirectTyping && rightPaneCleanText
-                                      ? "bg-primary text-surface"
-                                      : "text-ink-muted hover:text-ink"
-                                  }`}
-                                >
-                                  📄 순수 원고만
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setIsDirectTyping(true)}
-                                  className={`h-[20px] rounded px-2 text-[10px] font-bold whitespace-nowrap ${
-                                    isDirectTyping
-                                      ? "bg-primary text-surface"
-                                      : "text-ink-muted hover:text-ink"
-                                  }`}
-                                >
-                                  ✎ 직접 타이핑 수정
-                                </button>
-                              </div>
-                            )}
+                            <span className="text-[11px] text-ink-muted whitespace-nowrap">
+                              {effectiveMode === "minimal"
+                                ? "교정 선택 문장만 초록색 반영"
+                                : "리라이팅·재배치 문장 노란색 표시"}
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void handleQuickCopyRewritten("body")}
-                              className="inline-flex h-[22px] items-center whitespace-nowrap rounded bg-pass px-2.5 text-[11px] font-bold text-surface hover:opacity-90"
-                            >
-                              📋 본문 바로 복사
-                            </button>
+                            {!paragraphMode && (
+                              <button
+                                type="button"
+                                onClick={() => setIsDirectTyping((v) => !v)}
+                                className={`inline-flex h-[22px] items-center whitespace-nowrap rounded border-hairline px-2 text-[11px] font-semibold transition-colors ${
+                                  isDirectTyping
+                                    ? "border-primary bg-primary text-surface"
+                                    : "border-line bg-surface text-ink hover:border-primary hover:text-primary"
+                                }`}
+                              >
+                                {isDirectTyping ? "✓ 직접 편집 완료" : "✎ 직접 타이핑 편집"}
+                              </button>
+                            )}
                             <span
                               className={`text-[11px] font-semibold whitespace-nowrap ${
                                 isBodyInRange ? "text-pass" : "text-hold"
@@ -3714,9 +3776,33 @@ export default function JobWorkspacePage() {
           </Card>
         </section>
 
-        {/* 우측: 상단 규정 체크 리포트 + 오른쪽 하단 AI 채팅으로 기사 수정 (350px) */}
+        {/* 우측: 상단 규정 체크 리포트 + 오른쪽 하단 AI 채팅으로 기사 수정 */}
         {!wideEditorMode && (
-        <aside className="w-[350px] shrink-0 flex flex-col gap-4">
+        <>
+        {/* 중앙 편집기 ↔ 오른쪽 사이드바 사이 너비 조절 핸들 */}
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          title="좌우로 드래그하여 규정·AI 채팅 사이드바 너비 조절 (더블클릭: 기본 크기 복원)"
+          onDoubleClick={() => setRightSidebarWidth(340)}
+          onMouseDown={(e) => {
+            const startWidth = rightSidebarWidth;
+            startHorizontalResize(e, (dx) => {
+              setRightSidebarWidth(Math.min(500, Math.max(250, startWidth - dx)));
+            });
+          }}
+          className="w-3.5 shrink-0 self-stretch cursor-col-resize flex flex-col items-center justify-center group select-none"
+        >
+          <div className="w-[3px] h-16 rounded-full bg-line group-hover:bg-primary transition-colors flex items-center justify-center">
+            <span className="opacity-0 group-hover:opacity-100 rounded bg-primary px-1 py-0.5 text-[9px] font-bold text-surface whitespace-nowrap pointer-events-none">
+              ↔
+            </span>
+          </div>
+        </div>
+        <aside
+          style={{ width: `${rightSidebarWidth}px` }}
+          className="shrink-0 flex flex-col gap-4"
+        >
           <Card className="p-0 overflow-hidden">
             <div className="grid grid-cols-4 border-b-hairline border-line bg-surface-subtle p-1 gap-1">
               {[
@@ -4147,6 +4233,7 @@ export default function JobWorkspacePage() {
             </div>
           </Card>
         </aside>
+        </>
         )}
       </main>
 

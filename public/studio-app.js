@@ -1901,6 +1901,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   const [tallParagraphs, setTallParagraphs] = useState(false);
   const [focusedParaIdx, setFocusedParaIdx] = useState(null);
   const [highlightedTerm, setHighlightedTerm] = useState(null);
+  const [showTitleCandidatesToggle, setShowTitleCandidatesToggle] = useState(false);
 
   const [title, setTitle] = useState(data.article?.title || "");
   const [subtitle, setSubtitle] = useState(data.article?.subtitle || "");
@@ -2202,9 +2203,50 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     setNewFactUrl("");
   }
 
+  function scrollToBodyParagraphStudio(idx) {
+    const clamped = Math.min(Math.max(0, idx), Math.max(0, bodyParagraphs.length - 1));
+    setFocusedParaIdx(clamped);
+    setTimeout(() => {
+      const el = document.getElementById(`body-para-${clamped}`);
+      if (el) {
+        const scrollParent = el.closest(".overflow-y-auto");
+        if (scrollParent) {
+          const parentRect = scrollParent.getBoundingClientRect();
+          const elRect = el.getBoundingClientRect();
+          const targetTop =
+            scrollParent.scrollTop +
+            (elRect.top - parentRect.top) -
+            Math.max(24, parentRect.height * 0.2);
+          scrollParent.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+        } else {
+          el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }
+    }, 60);
+    setTimeout(() => {
+      setFocusedParaIdx((prev) => (prev === clamped ? null : prev));
+    }, 2400);
+  }
+
   function handleInsertFactMemoToParagraph(memoId) {
     const memo = factMemos.find((m) => m.id === memoId);
     if (!memo) return;
+
+    // 이미 반영된 상태라면 본문에서 해당 문장을 제거하여 반영 안 한 상태로 되돌리기
+    if (memo.inserted && body.includes(memo.text)) {
+      const cleanedBody = body
+        .replace(` ${memo.text}`, "")
+        .replace(`${memo.text} `, "")
+        .replace(memo.text, "")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+      setBody(cleanedBody);
+      setFactMemos((prev) =>
+        prev.map((m) => (m.id === memoId ? { ...m, inserted: false } : m))
+      );
+      return;
+    }
+
     const targetIdx = Math.min(
       Math.max(0, memoTargetParas[memoId] ?? memo.targetParagraphIndex ?? 1),
       Math.max(0, bodyParagraphs.length - 1)
@@ -2222,6 +2264,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
           : m
       )
     );
+    scrollToBodyParagraphStudio(targetIdx);
   }
 
   function handleDeleteFactMemo(memoId) {
@@ -2751,7 +2794,16 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
       return (
         <div className="rounded-md border-hairline border-line bg-surface p-5 space-y-4 text-[14.5px] leading-[28px] text-ink break-keep">
           {rawParagraphs.map((rp, rIdx) => (
-            <div key={rIdx}>
+            <div
+              key={rIdx}
+              onClick={() => scrollToBodyParagraphStudio(rIdx)}
+              title={`클릭 시 오른쪽 본문 단락 ${String(rIdx + 1).padStart(2, "0")} 위치로 이동합니다`}
+              className={`rounded px-1.5 py-0.5 -mx-1.5 cursor-pointer transition-colors ${
+                focusedParaIdx === rIdx
+                  ? "bg-primary-subtle/70 ring-1 ring-primary"
+                  : "hover:bg-surface-subtle"
+              }`}
+            >
               {renderOriginalParagraphSentencesStudio(rp, rIdx)}
             </div>
           ))}
@@ -2764,15 +2816,21 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
         {rawParagraphs.map((rp, rIdx) => (
           <div
             key={rIdx}
-            className="rounded-md border-hairline border-line bg-surface p-3 space-y-2 break-keep"
+            onClick={() => scrollToBodyParagraphStudio(rIdx)}
+            title={`클릭 시 오른쪽 수정 단락 ${String(rIdx + 1).padStart(2, "0")} 위치로 바로 이동합니다`}
+            className={`rounded-md border-hairline p-3 space-y-2 break-keep cursor-pointer transition-colors ${
+              focusedParaIdx === rIdx
+                ? "border-primary bg-primary-subtle/40 ring-1 ring-primary"
+                : "border-line bg-surface hover:border-primary"
+            }`}
           >
             <div className="flex items-center justify-between text-[11px] text-ink-muted border-b-hairline border-line pb-1">
               <span className="font-semibold text-ink">
                 원문 단락 {String(rIdx + 1).padStart(2, "0")} ({Array.from(rp).length}자)
               </span>
-              {effectiveMode === "minimal" && (
-                <span>빨간색 문장 클릭 → 수정 버전 선택</span>
-              )}
+              <span className="font-semibold text-primary whitespace-nowrap">
+                본문 단락 {String(Math.min(rIdx + 1, bodyParagraphs.length)).padStart(2, "0")} 이동 →
+              </span>
             </div>
             {renderOriginalParagraphSentencesStudio(rp, rIdx)}
           </div>
@@ -3084,9 +3142,14 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                               </a>
                             )}
                             {memo.inserted && (
-                              <span className="whitespace-nowrap rounded bg-pass-bg px-1.5 py-0.5 text-[11px] font-semibold text-pass">
-                                ✓ 본문 반영됨
-                              </span>
+                              <button
+                                type="button"
+                                onClick={() => scrollToBodyParagraphStudio(selIdx)}
+                                className="whitespace-nowrap rounded bg-pass-bg px-1.5 py-0.5 text-[11px] font-semibold text-pass hover:underline"
+                                title="클릭 시 해당 본문 단락으로 이동"
+                              >
+                                ✓ 단락 {String(selIdx + 1).padStart(2, "0")} 반영됨 ↗
+                              </button>
                             )}
                           </div>
                           <div className="flex items-center gap-2 pt-0.5">
@@ -3109,9 +3172,13 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                             <button
                               type="button"
                               onClick={() => handleInsertFactMemoToParagraph(memo.id)}
-                              className="whitespace-nowrap text-[12px] font-semibold text-hold hover:underline"
+                              className={`whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-bold transition-colors ${
+                                memo.inserted
+                                  ? "border-hairline border-reject bg-reject-bg text-reject hover:opacity-90"
+                                  : "text-hold hover:underline"
+                              }`}
                             >
-                              본문 반영 →
+                              {memo.inserted ? "↩ 되돌리기 (반영 취소)" : "본문 반영 →"}
                             </button>
                             <button
                               type="button"
@@ -3233,10 +3300,26 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
             </div>
 
             <div className="divide-y-hairline divide-line flex-1 flex flex-col">
-              {/* 1. 제목 및 추천 제목 후보 (상단 최우선 노출) */}
+              {/* 1. 제목 및 추천 제목 후보 토글 (상단 최우선 노출) */}
               <div className="p-4 space-y-2">
-                <div className="flex items-center justify-between text-[12px]">
-                  <label className="font-semibold text-ink">제목 (목표 40자 내외, 28~45자 통과)</label>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-[12px]">
+                  <div className="flex items-center gap-2">
+                    <label className="font-semibold text-ink">제목 (목표 40자 내외, 28~45자 통과)</label>
+                    {s6Output?.titleCandidates?.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowTitleCandidatesToggle((v) => !v)}
+                        className={`inline-flex h-[24px] items-center gap-1 rounded-md border-hairline px-2.5 text-[11px] font-bold transition-colors whitespace-nowrap ${
+                          showTitleCandidatesToggle
+                            ? "border-primary bg-primary text-surface"
+                            : "border-primary bg-primary-subtle text-primary hover:bg-primary hover:text-surface"
+                        }`}
+                      >
+                        <span>✨ 추천 제목 후보 ({s6Output.titleCandidates.length}종)</span>
+                        <span>{showTitleCandidatesToggle ? "▲ 접기" : "▼ 열기"}</span>
+                      </button>
+                    )}
+                  </div>
                   <span className={isTitleInRange ? "text-ink-muted" : "text-hold font-semibold"}>
                     {titleCharCount}자 (기준 28~45자)
                   </span>
@@ -3246,21 +3329,48 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                   onChange={(e) => setTitle(e.target.value)}
                   className="w-full h-[42px] rounded-md border-hairline border-line px-3 text-[18px] font-semibold"
                 />
-                {s6Output?.titleCandidates?.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                    <span className="text-[11px] font-semibold text-ink-muted whitespace-nowrap">
-                      추천 제목 후보:
-                    </span>
-                    {s6Output.titleCandidates.map((cand, i) => (
+                {showTitleCandidatesToggle && s6Output?.titleCandidates?.length > 0 && (
+                  <div className="rounded-md border-hairline border-primary bg-surface-subtle p-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between text-[11px] text-ink-muted">
+                      <span className="font-semibold text-primary">
+                        클릭하면 해당 제목으로 즉시 교체됩니다:
+                      </span>
                       <button
-                        key={i}
                         type="button"
-                        onClick={() => setTitle(cand)}
-                        className="rounded border-hairline border-line bg-surface-subtle px-2 py-0.5 text-[11px] text-primary hover:border-primary hover:bg-primary-subtle transition-colors truncate max-w-full"
+                        onClick={() => setShowTitleCandidatesToggle(false)}
+                        className="text-ink-muted hover:text-ink"
                       >
-                        후보 {i + 1}: {cand}
+                        닫기 ✕
                       </button>
-                    ))}
+                    </div>
+                    <div className="space-y-1">
+                      {s6Output.titleCandidates.map((cand, i) => {
+                        const isCurTitle = title.trim() === cand.trim();
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            onClick={() => {
+                              setTitle(cand);
+                              setShowTitleCandidatesToggle(false);
+                            }}
+                            className={`w-full text-left flex items-center justify-between gap-2 rounded border-hairline px-3 py-2 text-[13px] transition-colors ${
+                              isCurTitle
+                                ? "border-pass bg-pass-bg text-pass font-bold"
+                                : "border-line bg-surface hover:border-primary text-ink font-medium"
+                            }`}
+                          >
+                            <span className="break-keep">
+                              <strong className="text-primary mr-1.5">후보 {i + 1}.</strong>
+                              {cand}
+                            </span>
+                            <span className="text-[11px] whitespace-nowrap shrink-0 font-semibold text-ink-muted">
+                              {Array.from(cand).length}자 {isCurTitle ? "· ✓ 현재 적용됨" : "· 선택 →"}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </div>
@@ -3638,7 +3748,15 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                           ) : (
                             <div className="rounded-md border-hairline border-line bg-surface p-5 space-y-4 text-[15px] leading-[28px] text-ink select-text break-keep">
                               {bodyParagraphs.map((para, idx) => (
-                                <div key={idx} id={`body-para-${idx}`} className="leading-[28px]">
+                                <div
+                                  key={idx}
+                                  id={`body-para-${idx}`}
+                                  className={`leading-[28px] rounded px-1.5 py-0.5 -mx-1.5 transition-colors ${
+                                    focusedParaIdx === idx
+                                      ? "bg-primary-subtle ring-2 ring-primary"
+                                      : ""
+                                  }`}
+                                >
                                   {rightPaneCleanText ? (
                                     <p className="break-keep">{para}</p>
                                   ) : effectiveMode === "minimal" ? (
@@ -3656,7 +3774,11 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                             <div
                               id={`body-para-${idx}`}
                               key={idx}
-                              className="rounded-md border-hairline border-line bg-surface-subtle/50 p-3 space-y-2"
+                              className={`rounded-md border-hairline p-3 space-y-2 transition-colors ${
+                                focusedParaIdx === idx
+                                  ? "border-primary bg-primary-subtle/50 ring-2 ring-primary"
+                                  : "border-line bg-surface-subtle/50"
+                              }`}
                             >
                               <div className="flex items-center justify-between border-b-hairline border-line pb-1 text-[11px]">
                                 <span className="font-semibold text-primary whitespace-nowrap">

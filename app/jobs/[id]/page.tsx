@@ -229,6 +229,8 @@ export default function JobWorkspacePage() {
   const [focusedParaIdx, setFocusedParaIdx] = React.useState<number | null>(
     null
   );
+  const [showTitleCandidatesToggle, setShowTitleCandidatesToggle] =
+    React.useState(false);
   // CMS 복사 옵션 및 미리보기 상태 (PRD F14)
   const [blankLineCopy, setBlankLineCopy] = React.useState(true);
   const [includeBylineCopy, setIncludeBylineCopy] = React.useState(false);
@@ -1219,18 +1221,32 @@ export default function JobWorkspacePage() {
   }, [data]);
 
   function scrollToParagraph(pIdx: number, term?: string) {
-    if (!paragraphMode) {
-      setParagraphMode(true);
-    }
+    const clamped = Math.min(Math.max(0, pIdx), Math.max(0, bodyParagraphs.length - 1));
     setShowInlineDiffHighlight(true);
-    setFocusedParaIdx(pIdx);
+    setFocusedParaIdx(clamped);
     if (term) {
       setHighlightedTerm(term);
     }
     setTimeout(() => {
-      const el = document.getElementById(`body-para-${pIdx}`);
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
+      const el = document.getElementById(`body-para-${clamped}`);
+      if (el) {
+        const scrollParent = el.closest(".overflow-y-auto");
+        if (scrollParent) {
+          const parentRect = scrollParent.getBoundingClientRect();
+          const elRect = el.getBoundingClientRect();
+          const targetTop =
+            scrollParent.scrollTop +
+            (elRect.top - parentRect.top) -
+            Math.max(24, parentRect.height * 0.2);
+          scrollParent.scrollTo({ top: Math.max(0, targetTop), behavior: "smooth" });
+        } else {
+          el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }
     }, 60);
+    setTimeout(() => {
+      setFocusedParaIdx((prev) => (prev === clamped ? null : prev));
+    }, 2400);
   }
 
   function renderTextWithDiffHighlights(text: string): React.ReactNode {
@@ -1990,7 +2006,18 @@ export default function JobWorkspacePage() {
       return (
         <div className="rounded-md border-hairline border-line bg-surface p-5 space-y-4 text-[14.5px] leading-[28px] text-ink break-keep">
           {rawParagraphs.map((rawPara, rIdx) => (
-            <div key={rIdx}>{renderOriginalParagraphSentences(rawPara, rIdx)}</div>
+            <div
+              key={rIdx}
+              onClick={() => scrollToParagraph(rIdx)}
+              title={`클릭 시 오른쪽 본문 단락 ${String(rIdx + 1).padStart(2, "0")} 위치로 이동합니다`}
+              className={`rounded px-1.5 py-0.5 -mx-1.5 cursor-pointer transition-colors ${
+                focusedParaIdx === rIdx
+                  ? "bg-primary-subtle/70 ring-1 ring-primary"
+                  : "hover:bg-surface-subtle"
+              }`}
+            >
+              {renderOriginalParagraphSentences(rawPara, rIdx)}
+            </div>
           ))}
         </div>
       );
@@ -2001,15 +2028,21 @@ export default function JobWorkspacePage() {
         {rawParagraphs.map((rawPara, rIdx) => (
           <div
             key={rIdx}
-            className="rounded-md border-hairline border-line bg-surface p-3 space-y-2"
+            onClick={() => scrollToParagraph(rIdx)}
+            title={`클릭 시 오른쪽 수정 단락 ${String(rIdx + 1).padStart(2, "0")} 위치로 바로 이동합니다`}
+            className={`rounded-md border-hairline p-3 space-y-2 cursor-pointer transition-colors ${
+              focusedParaIdx === rIdx
+                ? "border-primary bg-primary-subtle/40 ring-1 ring-primary"
+                : "border-line bg-surface hover:border-primary"
+            }`}
           >
             <div className="flex items-center justify-between text-[11px] text-ink-muted border-b-hairline border-line pb-1">
               <span className="font-semibold text-ink">
                 원문 단락 {String(rIdx + 1).padStart(2, "0")} ({Array.from(rawPara).length}자)
               </span>
-              {effectiveMode === "minimal" && (
-                <span>빨간색 문장 클릭 → 수정 문장 선택</span>
-              )}
+              <span className="font-semibold text-primary whitespace-nowrap">
+                본문 단락 {String(Math.min(rIdx + 1, bodyParagraphs.length)).padStart(2, "0")} 이동 →
+              </span>
             </div>
             {renderOriginalParagraphSentences(rawPara, rIdx)}
           </div>
@@ -2499,9 +2532,13 @@ export default function JobWorkspacePage() {
                             <button
                               type="button"
                               onClick={() => handleInsertFactMemoToParagraph(memo)}
-                              className="inline-flex items-center gap-1 text-[12px] font-semibold text-hold hover:underline whitespace-nowrap shrink-0"
+                              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-bold whitespace-nowrap shrink-0 transition-colors ${
+                                isInserted
+                                  ? "border-hairline border-reject bg-reject-bg text-reject hover:opacity-90"
+                                  : "text-hold hover:underline"
+                              }`}
                             >
-                              <span>{isInserted ? "반영 취소 ↺" : "본문 반영 →"}</span>
+                              <span>{isInserted ? "↩ 되돌리기 (반영 취소)" : "본문 반영 →"}</span>
                             </button>
                             <button
                               type="button"
@@ -2762,10 +2799,27 @@ export default function JobWorkspacePage() {
                 {/* 1. 상단: 기사 제목 & 추천 제목 후보 & 부제목 (불필요한 상단 박스 제거로 한눈에 들어오도록 구성) */}
                 <div className="p-4 space-y-3 bg-surface">
                   <div className="space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <Label htmlFor="articleTitle">
-                        제목 (목표 40자 내외, 28~45자 통과)
-                      </Label>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Label htmlFor="articleTitle">
+                          제목 (목표 40자 내외, 28~45자 통과)
+                        </Label>
+                        {s6Output?.titleCandidates &&
+                          s6Output.titleCandidates.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setShowTitleCandidatesToggle((v) => !v)}
+                              className={`inline-flex h-[24px] items-center gap-1 rounded-md border-hairline px-2.5 text-[11px] font-bold transition-colors whitespace-nowrap ${
+                                showTitleCandidatesToggle
+                                  ? "border-primary bg-primary text-surface"
+                                  : "border-primary bg-primary-subtle text-primary hover:bg-primary hover:text-surface"
+                              }`}
+                            >
+                              <span>✨ 추천 제목 후보 ({s6Output.titleCandidates.length}종)</span>
+                              <span>{showTitleCandidatesToggle ? "▲ 접기" : "▼ 열기"}</span>
+                            </button>
+                          )}
+                      </div>
                       <span
                         className={`text-[12px] leading-[18px] font-medium whitespace-nowrap ${
                           isTitleInRange ? "text-ink-muted" : "text-hold"
@@ -2780,22 +2834,50 @@ export default function JobWorkspacePage() {
                       onChange={(e) => setTitle(e.target.value)}
                       className="h-[42px] text-[19px] leading-[28px] font-bold"
                     />
-                    {s6Output?.titleCandidates &&
+                    {showTitleCandidatesToggle &&
+                      s6Output?.titleCandidates &&
                       s6Output.titleCandidates.length > 0 && (
-                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                          <span className="text-[11px] font-semibold text-ink-muted whitespace-nowrap">
-                            추천 제목 후보:
-                          </span>
-                          {s6Output.titleCandidates.map((cand, idx) => (
+                        <div className="rounded-md border-hairline border-primary bg-surface-subtle p-2.5 space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px] text-ink-muted">
+                            <span className="font-semibold text-primary">
+                              클릭하면 해당 제목으로 즉시 교체됩니다:
+                            </span>
                             <button
-                              key={idx}
                               type="button"
-                              onClick={() => setTitle(cand)}
-                              className="text-left rounded border-hairline border-line bg-surface-subtle px-2 py-0.5 text-[11px] leading-[16px] text-primary hover:border-primary hover:bg-primary-subtle transition-colors"
+                              onClick={() => setShowTitleCandidatesToggle(false)}
+                              className="text-ink-muted hover:text-ink"
                             >
-                              후보 {idx + 1}: {cand}
+                              닫기 ✕
                             </button>
-                          ))}
+                          </div>
+                          <div className="space-y-1">
+                            {s6Output.titleCandidates.map((cand, idx) => {
+                              const isCurTitle = title.trim() === cand.trim();
+                              return (
+                                <button
+                                  key={idx}
+                                  type="button"
+                                  onClick={() => {
+                                    setTitle(cand);
+                                    setShowTitleCandidatesToggle(false);
+                                  }}
+                                  className={`w-full text-left flex items-center justify-between gap-2 rounded border-hairline px-3 py-2 text-[13px] transition-colors ${
+                                    isCurTitle
+                                      ? "border-pass bg-pass-bg text-pass font-bold"
+                                      : "border-line bg-surface hover:border-primary text-ink font-medium"
+                                  }`}
+                                >
+                                  <span className="break-keep">
+                                    <strong className="text-primary mr-1.5">후보 {idx + 1}.</strong>
+                                    {cand}
+                                  </span>
+                                  <span className="text-[11px] whitespace-nowrap shrink-0 font-semibold text-ink-muted">
+                                    {Array.from(cand).length}자 {isCurTitle ? "· ✓ 현재 적용됨" : "· 선택 →"}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
                   </div>
@@ -3233,7 +3315,11 @@ export default function JobWorkspacePage() {
                                   <div
                                     key={idx}
                                     id={`body-para-${idx}`}
-                                    className="leading-[28px]"
+                                    className={`leading-[28px] rounded px-1.5 py-0.5 -mx-1.5 transition-colors ${
+                                      focusedParaIdx === idx
+                                        ? "bg-primary-subtle ring-2 ring-primary"
+                                        : ""
+                                    }`}
                                   >
                                     {rightPaneCleanText ? (
                                       <p className="break-keep">{para}</p>
@@ -3260,7 +3346,11 @@ export default function JobWorkspacePage() {
                                 <div
                                   id={`body-para-${idx}`}
                                   key={idx}
-                                  className="rounded-md border-hairline border-line bg-surface-subtle/50 p-3 space-y-2"
+                                  className={`rounded-md border-hairline p-3 space-y-2 transition-colors ${
+                                    focusedParaIdx === idx
+                                      ? "border-primary bg-primary-subtle/50 ring-2 ring-primary"
+                                      : "border-line bg-surface-subtle/50"
+                                  }`}
                                 >
                                   <div className="flex flex-wrap items-center justify-between gap-2 border-b-hairline border-line pb-1.5">
                                     <div className="flex items-center gap-1.5">

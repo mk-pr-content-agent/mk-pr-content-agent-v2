@@ -230,6 +230,79 @@ function convertRawNoteToMkStyleClient(rawNote, compName) {
   return s;
 }
 
+// 따옴표 종류(' vs ‘, " vs “), 쉼표 유무(”라며, “ vs ”라며 “), 줄바꿈·공백 차이에 영향받지 않는 문장 비교·치환 유틸리티
+function stripAllPunctAndSpace(str) {
+  return (str || "").replace(/[^가-힣A-Za-z0-9]/g, "");
+}
+
+function isSameSentenceResilient(sentA, sentB) {
+  if (!sentA || !sentB) return false;
+  if (sentA === sentB) return true;
+  const a = stripAllPunctAndSpace(sentA);
+  const b = stripAllPunctAndSpace(sentB);
+  if (!a || !b) return false;
+  if (a === b) return true;
+  if (a.length >= 10 && b.length >= 10 && (a.includes(b) || b.includes(a))) {
+    return true;
+  }
+  // 앞 14글자 또는 뒤 14글자가 동일하고 길이 차이가 크지 않은 경우 동일 문장 변형으로 인식
+  if (a.length >= 20 && b.length >= 20) {
+    const samePrefix = a.slice(0, 14) === b.slice(0, 14);
+    const sameSuffix = a.slice(-12) === b.slice(-12);
+    if (samePrefix && sameSuffix) return true;
+    if (samePrefix && Math.abs(a.length - b.length) <= Math.max(a.length, b.length) * 0.45) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function replaceSentenceInBodyResilient(bodyText, sug, newText) {
+  if (!bodyText || !sug || !newText) return bodyText;
+  const candidates = [
+    ...(sug.alternatives || []).map((a) => a.text),
+    sug.originalSentence,
+  ].filter(Boolean);
+
+  // 1) 정확히 일치하는 부분 문자열이 있으면 즉시 치환
+  for (const cand of candidates) {
+    if (bodyText.includes(cand)) {
+      return bodyText.replace(cand, newText);
+    }
+  }
+
+  // 2) 따옴표·쉼표·줄바꿈 차이로 정확 일치하지 않는 경우 단락·문장 단위로 복원력 있게 치환
+  const paras = bodyText.split(/\n{2,}/);
+  let replaced = false;
+  const updatedParas = paras.map((para, pIdx) => {
+    if (replaced) return para;
+    const sents = splitKoreanSentences(para);
+    const nextSents = sents.map((s) => {
+      if (replaced) return s;
+      const matched = candidates.some((cand) => isSameSentenceResilient(s, cand));
+      if (matched) {
+        replaced = true;
+        return newText;
+      }
+      // 같은 단락 인덱스이고 앞부분 핵심 어절(12글자)이 동일한 경우
+      if (
+        pIdx === sug.paragraphIndex &&
+        stripAllPunctAndSpace(s).length >= 14 &&
+        stripAllPunctAndSpace(sug.originalSentence).length >= 14 &&
+        stripAllPunctAndSpace(s).slice(0, 12) ===
+          stripAllPunctAndSpace(sug.originalSentence).slice(0, 12)
+      ) {
+        replaced = true;
+        return newText;
+      }
+      return s;
+    });
+    return nextSents.join(" ");
+  });
+
+  return updatedParas.join("\n\n");
+}
+
 function buildClientSentenceSuggestions(rawText, compName) {
   const paras = splitPressReleaseParagraphs(rawText);
   const suggestions = [];
@@ -269,6 +342,48 @@ function buildClientSentenceSuggestions(rawText, compName) {
         if (/^[A-Z0-9&/+]{2,5}$/.test(trimmed)) return full;
         return "";
       });
+
+    // ★ 관계자 직접 인용문(“...라며 ...라고 말했다”) 전용 3버전 생성기:
+    // 단순 어미('말했다→전했다')만 바꾸지 않고 인용문 내 중복·수식어 정돈(v1), 핵심 발언 단일 인용 압축(v2), 간접 인용 기사체(v3)로 명확히 차별화
+    const twoPartQuoteMatch = cleanQuote(stripLongEnglishParens(normOrig)).match(
+      /^(.*?)“([^”]+)”(?:이라며|라며|며),?\s*“([^”]+)”(?:이라고|라고)\s*(말했다|전했다|밝혔다|강조했다|설명했다)\.?$/
+    );
+    if (twoPartQuoteMatch) {
+      const speakerPrefix = twoPartQuoteMatch[1].trim();
+      const q1 = twoPartQuoteMatch[2]
+        .replace(/본격적인\s+겨울을\s+앞두고\s+/g, "겨울 시즌을 맞아 ")
+        .replace(/혁신적인\s+/g, "")
+        .trim();
+      const q2 = twoPartQuoteMatch[3]
+        .replace(/,?\s*고객들이\s+일상\s+곳곳에서\s+/g, " 고객들이 ")
+        .replace(/삶의\s+특별한\s+순간을\s+온전히\s+/g, "대회 경험을 폭넓게 ")
+        .replace(/폴로\s+랄프\s+로렌만의\s+스타일을/g, "이번 시즌만의 차별화된 스타일을")
+        .trim();
+      const qVerb = twoPartQuoteMatch[4] === "말했다" ? "전했다" : "말했다";
+      const getQuoteParticle = (qStr) => {
+        const clean = (qStr || "").trim();
+        if (clean.endsWith("다")) return "고";
+        const lastCode = clean.charCodeAt(clean.length - 1);
+        if (lastCode >= 0xac00 && lastCode <= 0xd7a3) {
+          return (lastCode - 0xac00) % 28 !== 0 ? "이라고" : "라고";
+        }
+        return "라고";
+      };
+      const qParticle = getQuoteParticle(q2);
+
+      const v1Quote = ensureDot(`${speakerPrefix} “${q1}”라며 “${q2}”${qParticle} ${qVerb}`);
+      const v2Quote = ensureDot(`${speakerPrefix} “${q2}”${qParticle} 설명했다`);
+      const indirectBody = q2
+        .replace(/경험할\s+수\s+있을\s+것$/, "경험할 수 있도록 기획했다고 밝혔다")
+        .replace(/누릴\s+수\s+있도록\s+지원할\s+것$/, "누릴 수 있도록 지원하겠다고 밝혔다")
+        .replace(/기대한다$/, "기대한다고 밝혔다");
+      const v3Quote = ensureDot(
+        indirectBody !== q2
+          ? `${speakerPrefix} ${indirectBody}`
+          : `${speakerPrefix} ${q1}며 ${q2}고 덧붙였다`
+      );
+      return { v1: v1Quote, v2: v2Quote, v3: v3Quote };
+    }
 
     let v1 = ensureDot(stripLongEnglishParens(baseRefined || normOrig));
 
@@ -3045,22 +3160,44 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
           )
         );
       if (!hasStaleOrIdentical) {
+        const freshList = buildClientSentenceSuggestions(
+          data.job?.raw_text || "",
+          data.job?.company_name || "대상 기업"
+        );
         return sugs.map((s) => {
-          const cleanedAlts = (s.alternatives || []).map((a) => ({
+          const freshMatch = freshList.find((f) =>
+            isSameSentenceResilient(f.originalSentence, s.originalSentence)
+          );
+          // 직접 인용문(“...라며 ...라고 말했다”)의 경우 더 정교해진 3버전(인용문 정돈·단일 인용 압축·간접 인용)으로 자동 업그레이드
+          const isTwoPartQuote = /“[^”]+”(?:이라며|라며|며),?\s*“[^”]+”/.test(
+            s.originalSentence || ""
+          );
+          const baseAlts =
+            isTwoPartQuote && freshMatch?.alternatives?.length === 3
+              ? freshMatch.alternatives.map((fa, idx) => ({
+                  ...fa,
+                  id: s.alternatives?.[idx]?.id || `${s.id}-alt-${idx + 1}`,
+                }))
+              : s.alternatives || [];
+
+          const cleanedAlts = baseAlts.map((a) => ({
             ...a,
             text: (a.text || "")
               .replace(/말했는\s*설명이다/g, "전했다")
               .replace(/말했게\s*된다/g, "강조했다"),
           }));
           const selAlt = cleanedAlts.find((a) => a.id === s.selectedAltId);
-          // 따옴표만 바뀐 자동 매칭이거나 실제 본문에 해당 교정문이 없으면 미선택(빨간줄) 상태 유지
+          // 따옴표만 바뀐 자동 매칭은 배제하되, 사용자가 선택한 항목은 유지
           const isValidUserSelection =
             Boolean(s.selectedAltId) &&
             Boolean(selAlt) &&
-            stripQ(selAlt.text) !== stripQ(s.originalSentence) &&
-            (data.article?.body || "").includes(selAlt.text);
+            stripQ(selAlt.text) !== stripQ(s.originalSentence);
           return {
             ...s,
+            paragraphIndex:
+              typeof s.paragraphIndex === "number"
+                ? s.paragraphIndex
+                : freshMatch?.paragraphIndex ?? 0,
             alternatives: cleanedAlts,
             selectedAltId: isValidUserSelection ? s.selectedAltId : null,
           };
@@ -3164,23 +3301,31 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     }));
   }
 
+  // 모드 1에서 왼쪽 교정 선택 상태(selectedAltId)와 오른쪽 본문(body)이 항상 100% 일치하도록 자동 동기화
+  useEffect(() => {
+    if (effectiveMode !== "minimal") return;
+    setBody((prevBody) => {
+      let nextBody = prevBody;
+      sentenceSuggestions.forEach((sug) => {
+        if (!sug.selectedAltId) return;
+        const selAlt = (sug.alternatives || []).find(
+          (a) => a.id === sug.selectedAltId
+        );
+        if (selAlt && selAlt.text && !nextBody.includes(selAlt.text)) {
+          nextBody = replaceSentenceInBodyResilient(nextBody, sug, selAlt.text);
+        }
+      });
+      return nextBody;
+    });
+  }, [effectiveMode, sentenceSuggestions]);
+
   function handleSelectSentenceAlternative(sugId, altId, customText) {
     const target = sentenceSuggestions.find((s) => s.id === sugId);
     if (!target) return;
-    const prevAlt = target.alternatives.find((a) => a.id === target.selectedAltId);
     const chosenAlt = target.alternatives.find((a) => a.id === altId);
     const newText = (customText ?? chosenAlt?.text ?? "").trim();
     if (!newText) return;
-    const currentTextInBody = prevAlt ? prevAlt.text : target.originalSentence;
-    setBody((prev) => {
-      if (prev.includes(currentTextInBody)) {
-        return prev.replace(currentTextInBody, newText);
-      }
-      if (prev.includes(target.originalSentence)) {
-        return prev.replace(target.originalSentence, newText);
-      }
-      return prev;
-    });
+    setBody((prev) => replaceSentenceInBodyResilient(prev, target, newText));
     setSentenceSuggestions((prev) =>
       prev.map((item) => {
         if (item.id !== sugId) return item;
@@ -3210,14 +3355,9 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   function handleRevertSentenceToOriginal(sugId) {
     const target = sentenceSuggestions.find((s) => s.id === sugId);
     if (!target || !target.selectedAltId) return;
-    const prevAlt = target.alternatives.find((a) => a.id === target.selectedAltId);
-    if (prevAlt) {
-      setBody((prev) =>
-        prev.includes(prevAlt.text)
-          ? prev.replace(prevAlt.text, target.originalSentence)
-          : prev
-      );
-    }
+    setBody((prev) =>
+      replaceSentenceInBodyResilient(prev, target, target.originalSentence)
+    );
     setSentenceSuggestions((prev) =>
       prev.map((item) =>
         item.id === sugId ? { ...item, selectedAltId: null } : item
@@ -3231,13 +3371,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     const nextList = sentenceSuggestions.map((item) => {
       const firstAlt = item.alternatives[0];
       if (!firstAlt) return item;
-      const curAlt = item.alternatives.find((a) => a.id === item.selectedAltId);
-      const curSent = curAlt ? curAlt.text : item.originalSentence;
-      if (nextBody.includes(curSent)) {
-        nextBody = nextBody.replace(curSent, firstAlt.text);
-      } else if (nextBody.includes(item.originalSentence)) {
-        nextBody = nextBody.replace(item.originalSentence, firstAlt.text);
-      }
+      nextBody = replaceSentenceInBodyResilient(nextBody, item, firstAlt.text);
       return { ...item, selectedAltId: firstAlt.id };
     });
     setBody(nextBody);
@@ -3248,10 +3382,11 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     let nextBody = body;
     const nextList = sentenceSuggestions.map((item) => {
       if (!item.selectedAltId) return item;
-      const curAlt = item.alternatives.find((a) => a.id === item.selectedAltId);
-      if (curAlt && nextBody.includes(curAlt.text)) {
-        nextBody = nextBody.replace(curAlt.text, item.originalSentence);
-      }
+      nextBody = replaceSentenceInBodyResilient(
+        nextBody,
+        item,
+        item.originalSentence
+      );
       return { ...item, selectedAltId: null };
     });
     setBody(nextBody);
@@ -3920,13 +4055,8 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
         {sents.map((sent, sIdx) => {
           const matchedSug =
             effectiveMode === "minimal"
-              ? sentenceSuggestions.find(
-                  (sug) =>
-                    sent === sug.originalSentence ||
-                    (sent.length >= 12 &&
-                      sug.originalSentence.length >= 12 &&
-                      (sent.includes(sug.originalSentence) ||
-                        sug.originalSentence.includes(sent)))
+              ? sentenceSuggestions.find((sug) =>
+                  isSameSentenceResilient(sent, sug.originalSentence)
                 )
               : null;
 
@@ -4201,11 +4331,11 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
             );
             const curTarget = selAlt ? selAlt.text : sug.originalSentence;
             return (
-              sent === curTarget ||
-              sent === sug.originalSentence ||
-              (sent.length >= 12 &&
-                curTarget.length >= 12 &&
-                (sent.includes(curTarget) || curTarget.includes(sent)))
+              isSameSentenceResilient(sent, curTarget) ||
+              isSameSentenceResilient(sent, sug.originalSentence) ||
+              (sug.alternatives || []).some((a) =>
+                isSameSentenceResilient(sent, a.text)
+              )
             );
           });
           const matchedFact = factMemos.find(

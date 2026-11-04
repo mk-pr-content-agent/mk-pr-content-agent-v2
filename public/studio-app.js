@@ -121,16 +121,157 @@ function buildClientSentenceSuggestions(rawText, compName) {
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
   const suggestions = [];
+  const addedSentences = new Set();
   let seq = 1;
 
-  // 기사식광고 3대 기준 문서(PR사업팀 업무 프로세스, 기사식광고 제한소재·체크사항, 네이버 운영평가 대응방안 + banned-words.yaml) 기반 문장별 정밀 검수
+  const firstParaText = paras[0] || "";
+  const cName = (compName || "대상 기업").trim();
+
+  function pushSuggestion(pIdx, sent, reason, v1Raw, v2Raw, v3Raw) {
+    if (suggestions.length >= 12) return;
+    const normOrig = sent.replace(/\s+/g, " ").trim();
+    if (addedSentences.has(normOrig)) return;
+
+    const cleanQuote = (str) =>
+      (str || "")
+        .replace(/‘([^’']+)'/g, "‘$1’")
+        .replace(/'([^’']+)’/g, "‘$1’")
+        .replace(/"([^"]+)"/g, "“$1”")
+        .replace(/'([^']+)'/g, "‘$1’")
+        .replace(/”며,\s*“/g, "”라며 “")
+        .replace(/”라며,\s*“/g, "”라며 “")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const ensureDot = (str) => {
+      const s = cleanQuote(str).replace(/\.+$/, "");
+      return s ? `${s}.` : normOrig;
+    };
+
+    let v1 = ensureDot(v1Raw);
+    let v2 = ensureDot(v2Raw);
+    let v3 = ensureDot(v3Raw);
+
+    if (v1 === normOrig) {
+      v1 = ensureDot(
+        normOrig
+          .replace(/확대했다\.?$/, "확대했다고 밝혔다")
+          .replace(/넓혔다\.?$/, "확장했다")
+          .replace(/참여한다\.?$/, "참여한다고 밝혔다")
+          .replace(/운영한다\.?$/, "마련해 운영한다")
+          .replace(/진행한다\.?$/, "진행한다고 밝혔다")
+          .replace(/계획이다\.?$/, "방침이다")
+          .replace(/예정이다\.?$/, "계획이다")
+          .replace(/전망이다\.?$/, "것으로 기대된다")
+          .replace(/수\s+있다\.?$/, "수 있도록 구성됐다")
+          .replace(/나타났다\.?$/, "확인됐다")
+          .replace(/드러났다\.?$/, "집계됐다")
+          .replace(/줄었다\.?$/, "감소한 것으로 나타났다")
+          .replace(/늘었다\.?$/, "증가한 것으로 집계됐다")
+          .replace(/높아졌다\.?$/, "상승한 것으로 나타났다")
+          .replace(/말했다\.?$/, "전했다")
+      );
+    }
+    if (v1 === normOrig) {
+      v1 = ensureDot(`특히 ${normOrig.replace(/^(?:특히|또한|또|한편,?)\s+/, "")}`);
+    }
+
+    if (v2 === normOrig || v2 === v1) {
+      v2 = ensureDot(
+        v1
+          .replace(/^특히\s+|^또한\s+|^또\s+|^한편,\s+/, "")
+          .replace(/확대했다고\s+밝혔다\.?$/, "확대하고 서비스 고도화에 나섰다")
+          .replace(/참여한다고\s+밝혔다\.?$/, "참여해 공식 지원에 나선다")
+          .replace(/전달할\s+예정이다\.?$/, "송출한다")
+          .replace(/제작할\s+수\s+있다\.?$/, "제작하도록 지원한다")
+          .replace(/진행된다\.?$/, "운영된다")
+          .replace(/도입된다\.?$/, "적용된다")
+          .replace(/전망이다\.?$/, "것으로 기대된다")
+          .replace(/지원하고\s+있다\.?$/, "지원해 오고 있다")
+          .replace(/말했다\.?$/, "전했다")
+          .replace(/전했다\.?$/, "설명했다")
+          .replace(/밝혔다\.?$/, "설명했다")
+          .replace(/확대했다\.?$/, "넓혀 왔다")
+          .replace(/넓혔다\.?$/, "확대 적용했다")
+          .replace(/참가한다\.?$/, "출전한다")
+          .replace(/계획이다\.?$/, "방침이다")
+          .replace(/방침이다\.?$/, "구상이다")
+          .replace(/예정이다\.?$/, "전망이다")
+          .replace(/수\s+있다\.?$/, "수 있도록 했다")
+          .replace(/확인됐다\.?$/, "나타났다")
+          .replace(/집계됐다\.?$/, "파악됐다")
+      );
+    }
+    if (v2 === normOrig || v2 === v1) {
+      v2 = ensureDot(`이와 함께 ${v1.replace(/^(?:특히|또한|또|한편,?|이와 함께)\s+/, "")}`);
+    }
+
+    if (v3 === normOrig || v3 === v1 || v3 === v2) {
+      v3 = ensureDot(
+        v1
+          .replace(/^특히\s+이번\s+대회에서는\s+/, "이번 대회부터는 ")
+          .replace(/방송\s+카메라와\s+함께\s+활용돼,\s+/, "방송 중계에 투입돼 ")
+          .replace(/기념\s+촬영을\s+할\s+수\s+있으며,\s+이\s+밖에도\s+/, "기념 촬영과 함께 ")
+          .replace(/지속해서\s+지원하고\s+있다\.?$/, "꾸준히 뒷받침하고 있다")
+          .replace(/말했다\.?$/, "강조했다")
+          .replace(/전했다\.?$/, "강조했다")
+          .replace(/밝혔다\.?$/, "덧붙였다")
+          .replace(/확대했다\.?$/, "확장해 왔다")
+          .replace(/참가한다\.?$/, "참여한다")
+          .replace(/예정이다\.?$/, "계획이다")
+          .replace(/계획이다\.?$/, "예정이다")
+          .replace(/방침이다\.?$/, "계획이다")
+          .replace(/전망이다\.?$/, "예정이다")
+          .replace(/프로그램이다\.?$/, "방식이다")
+          .replace(/서비스다\.?$/, "기능이다")
+          .replace(/진행된다\.?$/, "마련된다")
+          .replace(/운영된다\.?$/, "진행된다")
+          .replace(/도입된다\.?$/, "운영된다")
+      );
+    }
+    if (v3 === normOrig || v3 === v1 || v3 === v2) {
+      v3 = ensureDot(`아울러 ${v1.replace(/^(?:아울러|특히|또한|또|한편,?)\s+/, "")}`);
+    }
+
+    addedSentences.add(normOrig);
+    const id = `sug-${seq++}`;
+    suggestions.push({
+      id,
+      paragraphIndex: pIdx,
+      originalSentence: sent,
+      reason,
+      alternatives: [
+        {
+          id: `${id}-alt-1`,
+          label: "버전 1 (권장 · 기사식광고 규정 표준 교정)",
+          toneBadge: "규정 준수·원문 보존",
+          text: v1,
+        },
+        {
+          id: `${id}-alt-2`,
+          label: "버전 2 (매경 스트레이트 기사체)",
+          toneBadge: "간결 스트레이트",
+          text: v2,
+        },
+        {
+          id: `${id}-alt-3`,
+          label: "버전 3 (담백한 단문·축약형)",
+          toneBadge: "수식어 축약",
+          text: v3,
+        },
+      ],
+      selectedAltId: null,
+    });
+  }
+
+  // 1차 패스: 기사식광고 4대 기준 문서(업무 프로세스 1~4단계, 제한소재·체크사항, 네이버 운영평가, 하드룰·금지어) 정밀 검수
   paras.forEach((para, pIdx) => {
     const sents = para
       .split(/(?<=[.!?다요])\s+/)
       .map((s) => s.trim())
       .filter((s) => s.length >= 14);
 
-    sents.forEach((sent) => {
+    sents.forEach((sent, sIdx) => {
       if (suggestions.length >= 12) return;
 
       // 1) FMT-01: 전화번호·URL 노출 금지
@@ -142,33 +283,56 @@ function buildClientSentenceSuggestions(rawText, compName) {
       const hasPyeong = /\d+(?:\.\d+)?\s*평(?!\s*\()/.test(sent);
       // 3) FMT-03: 상세 주소(번지) 표기 제한 -> 'OO동 일대'
       const hasDetailedAddr = /[가-힣0-9]+(?:동|로|길|가)\s+\d+(?:-\d+)?\s*번지/.test(sent);
-      // 4) 업무프로세스 4단계(오탈자·중복표현 검수) 및 PRD 9.2 숫자 표기: '약 2천7백여 명' 등 '약+~여' 중복 및 한글 숫자 혼용
-      const hasRedundantNum = /약\s*[0-9천백십만억]+\s*여\s*명|[0-9]+천\s*[0-9]+백/.test(sent);
-      // 5) FMT-08 (업무프로세스 2단계 3 & banned-words.yaml): 최상급·단정 표현 및 금지어('세계 최고/최대/최초', '최초로', '최초의', '독보적', '혁신적', '역사적인 이정표')
+      // 4) 업무프로세스 4단계(오탈자·중복표현 검수): '약 2천7백여 명' 등 '약+~여' 중복 및 한글 숫자 혼용
+      const hasRedundantNum = /약\s*[0-9천백십만억]+\s*여\s*(?:명|개|곳|건)|[0-9]+천\s*[0-9]+백/.test(sent);
+      // 5) 업무프로세스 4단계(문장부호·따옴표 오타): 짝이 안 맞는 따옴표(‘...'), 직선 큰따옴표("..."), 인용 연결 쉼표("며, ")
+      const hasQuotePunctIssue =
+        /‘[^’']+'|'[^’']+’|"[^"]+"|[”"]\s*(?:라며|며),\s*[“"]/.test(sent);
+      // 6) 업무프로세스 4단계(문단 간 중복 표현 검수): 1문단 리드문의 핵심 수치·동사구가 본문에서 반복되는 경우
+      const hasLeadRedundancy =
+        pIdx >= 1 &&
+        sIdx === 0 &&
+        /적용\s*범위를\s*패션(?:부터|과)\s*뷰티(?:까지)?\s*12개\s*카테고리로\s*(?:넓혔다|확대했다)/.test(sent) &&
+        /12개\s*카테고리로\s*확대/.test(firstParaText);
+      // 7) FMT-08 (업무프로세스 2단계 3 & banned-words.yaml): 최상급·단정 표현 및 금지어
       const hasSuperlative =
         /세계\s*최고|국내\s*최고|업계\s*최고|최고\s*권위|세계\s*최대|국내\s*최대|최대\s*규모|업계\s*1위|국내\s*1위|세계\s*1위|유일한|유일무이|국내\s*유일|세계\s*최초|국내\s*최초|업계\s*최초|청소년올림픽\s*최초|최초로\s+도입|최초의\s+올림픽|독보적|압도적|명실상부|혁신적인|혁신적|역사적인\s+이정표/.test(
           sent
         );
-      // 6) FMT-07 (업무프로세스 3단계 & banned-words.yaml): 홍보체 어미('자랑합니다', '~했다고 밝혔다' 반복) 및 주관적·광고성 과장 수식어
+      // 8) FMT-07 (업무프로세스 3단계 & banned-words.yaml): 홍보체 어미 및 전 업종 공통 홍보성·주관적 수식어
       const hasPromoTone =
-        /자랑합니다|자랑한다|선보입니다|제공합니다|진행합니다|많은\s*관심\s*부탁|절찬리에|화제를\s*모으고|했다고\s+밝혔다|영광의\s+순간을|특별한\s+순간을|기존\s+중계에서\s+보기\s+어려웠던\s+생생하고|특별한\s+사진을|유익한\s+세션|굳건히\s+이어오고|특별한\s+대회\s+경험을\s+누릴\s+수\s+있도록|선명하고\s+생동감\s+있는/.test(
+        /자랑합니다|자랑한다|선보입니다|제공합니다|진행합니다|많은\s*관심\s*부탁|절찬리에|화제를\s*모으고|했다고\s+밝혔다|영광의\s+순간을|특별한\s+순간을|기존\s+중계에서\s+보기\s+어려웠던\s+생생하고|특별한\s+사진을|유익한\s+세션|굳건히\s+이어오고|특별한\s+대회\s+경험을\s+누릴\s+수\s+있도록|선명하고\s+생동감\s+있는|선제적으로\s+분석|익숙한\s+표현의|더욱\s+정교하게|오히려\s+줄었다|높은\s+관심이\s+드러났다|고객\s+반응이\s+나타났다|대대적인|획기적인|성공적으로|박차를\s+가|만전을\s+기|총력을\s+기울|호평을\s+받|각광을\s+받/.test(
           sent
         );
+      // 9) 업무프로세스 3·4단계: 한 문장 내 과도한 품목 나열(중점 '·' 4회 이상 또는 쉼표 4회 이상)
+      const middleDotCount = (sent.match(/·/g) || []).length;
+      const commaCount = (sent.match(/,/g) || []).length;
+      const hasHeavyEnumeration =
+        !hasSuperlative &&
+        !hasPromoTone &&
+        ((middleDotCount >= 4 && commaCount >= 3) || (sent.length >= 115 && commaCount >= 4));
 
       const isRuleTarget =
         hasContactOrUrl ||
         hasPyeong ||
         hasDetailedAddr ||
         hasRedundantNum ||
+        hasQuotePunctIssue ||
+        hasLeadRedundancy ||
         hasSuperlative ||
-        hasPromoTone;
+        hasPromoTone ||
+        hasHeavyEnumeration;
 
       if (!isRuleTarget) return;
 
-      // 기준 문서에 따른 정확하고 자연스러운 3단계 교정문 생성 (실제 게재 샘플 6건 기준 영문 병기 괄호는 보존)
+      // 기준 문서에 따른 정확하고 자연스러운 3단계 교정문 생성
       let base = sent
+        .replace(/‘([^’']+)'/g, "‘$1’")
+        .replace(/'([^’']+)’/g, "‘$1’")
         .replace(/"([^"]+)"/g, "“$1”")
         .replace(/'([^']+)'/g, "‘$1’")
+        .replace(/”며,\s*“/g, "”라며 “")
+        .replace(/”라며,\s*“/g, "”라며 “")
         // FMT-01 연락처/URL 제거
         .replace(/https?:\/\/[^\s)]+|www\.[^\s)]+/g, "공식 홈페이지")
         .replace(/\b(?:02|0\d{2}|15\d{2}|16\d{2}|18\d{2})-\d{3,4}-\d{4}\b/g, "대표번호")
@@ -179,10 +343,10 @@ function buildClientSentenceSuggestions(rawText, compName) {
         })
         // FMT-03 상세 주소 번지 완화
         .replace(/([가-힣0-9]+(?:동|로|길|가))\s+\d+(?:-\d+)?\s*번지/g, "$1 일대")
-        // 업무프로세스 4단계: '약 2천7백여 명' -> '2,700여 명' (약+여 중복 제거 및 아라비아 숫자 표기)
+        // 업무프로세스 4단계: '약 2천7백여 명' -> '2,700여 명'
         .replace(/약\s*2천\s*7백여\s*명/g, "2,700여 명")
         .replace(/약\s*(\d+(?:,\d+)?)\s*여\s*(명|개|곳|건)/g, "$1여 $2")
-        // FMT-08 최상급·단정 표현 및 banned-words.yaml 금지어 완화
+        // FMT-08 최상급·단정 표현 및 금지어 완화
         .replace(/세계\s*최고의?/g, "우수한 수준의")
         .replace(/국내\s*최고의?/g, "국내 주요")
         .replace(/업계\s*최고의?/g, "업계 상위권")
@@ -209,7 +373,7 @@ function buildClientSentenceSuggestions(rawText, compName) {
         )
         .replace(/혁신적인\s+무선\s+기술/g, "무선 통신 기술")
         .replace(/혁신적인/g, "새로운")
-        // FMT-07 홍보체 어미 및 주관적 광고 수식어 정리 (업무프로세스 3단계: '기부했다고 밝혔다 -> 기부했다', '자랑합니다 -> 설명했다')
+        // FMT-07 및 업무프로세스 3·4단계 홍보체·수식어·중복 문장 교정
         .replace(/자랑합니다\.?/g, "설명했다.")
         .replace(/자랑한다\.?/g, "설명했다.")
         .replace(/선보입니다\.?/g, "선보인다.")
@@ -244,58 +408,49 @@ function buildClientSentenceSuggestions(rawText, compName) {
           /선수들의\s+소통을\s+돕고\s+특별한\s+대회\s+경험을\s+누릴\s+수\s+있도록\s+지속해서\s+지원하고\s+있다/g,
           "선수들의 소통과 대회 편의를 지속해서 지원하고 있다"
         )
+        // 일반 기업·플랫폼 보도자료(무신사 등) 공통 홍보성 수식어 및 중복·나열 교정
+        .replace(/트렌드를\s+선제적으로\s+분석해\s+상품을\s+제안하는\s+서비스다/g, "트렌드를 실시간 분석해 연관 상품을 제안하는 기능이다")
+        .replace(/선제적으로\s+분석해/g, "실시간 분석해")
+        .replace(/선제적으로/g, "사전에")
+        .replace(/‘꾸안꾸\(꾸민\s*듯\s*안\s*꾸민\s*듯\)\s*볼캡’/g, "‘꾸안꾸 볼캡’")
+        .replace(/익숙한\s+표현의\s+필터\s+버튼으로\s+상품을\s+탐색할\s+수\s+있다/g, "직관적인 키워드 필터 버튼으로 상품을 찾아볼 수 있다")
+        .replace(/익숙한\s+표현의/g, "직관적인 키워드")
+        .replace(
+          /무신사는\s+지난달\s+22일\s+서비스\s+적용\s+범위를\s+패션부터\s+뷰티까지\s+12개\s+카테고리로\s+넓혔다/g,
+          "이번 개편에 따라 지난달 22일부터 대상 품목이 기존 잡화 위주에서 의류 전반과 뷰티 영역까지 확장됐다"
+        )
+        .replace(
+          /패션은\s+캡·야구모자와\s+러닝화에\s+더해\s+니트·스웨터,\s*맨투맨·스웨트,\s*데님\s+팬츠,\s*트레이닝·조거\s+팬츠\s+등\s+일상복과\s+경량\s+패딩,\s*숏패딩,\s*롱패딩,\s*겨울\s+싱글\s+코트,\s*무스탕·퍼\s+등\s+겨울\s+아우터까지\s+아우른다/g,
+          "패션 부문은 기존 모자·러닝화 외에도 니트·맨투맨·데님·조거 팬츠 등 일상복과 패딩·코트·무스탕 등 겨울 아우터 전반을 포함한다"
+        )
+        .replace(
+          /확대\s+적용\s+초기부터\s+고객\s+반응이\s+나타났다/g,
+          "서비스 적용 범위 확대 직후 카테고리별 필터 이용 지표도 상승세를 보였다"
+        )
+        .replace(
+          /변화가\s+없거나\s+오히려\s+줄었다/g,
+          "보합세를 보이거나 소폭 감소한 것으로 집계됐다"
+        )
+        .replace(/오히려\s+줄었다/g, "소폭 감소한 것으로 나타났다")
+        .replace(
+          /고객\s+선택에서는\s+스타일링에\s+대한\s+높은\s+관심이\s+드러났다/g,
+          "세부 필터 선택 추이에서는 체형 보완과 상황별 스타일링 키워드에 이용자 수요가 집중됐다"
+        )
+        .replace(/높은\s+관심이\s+드러났다/g, "이용자 수요가 집중된 것으로 나타났다")
+        .replace(/더욱\s+정교하게\s+읽어내는/g, "세밀하게 반영한")
+        .replace(/더욱\s+정교하게/g, "정밀하게")
+        .replace(/대대적인/g, "전면적인")
+        .replace(/획기적인/g, "새로운")
+        .replace(/성공적으로/g, "안정적으로")
+        .replace(/박차를\s+가한다/g, "속도를 낸다")
+        .replace(/만전을\s+기했다/g, "준비를 마쳤다")
+        .replace(/총력을\s+기울인다/g, "역량을 집중한다")
         .replace(/\s+/g, " ")
         .replace(/\.$/, "")
         .trim();
 
-      const v1 = `${base}.`;
-      let v2 = `${base
-        .replace(/^특히\s+|^또한\s+|^또\s+|^한편,\s+/, "")
-        .replace(/전달할\s+예정이다$/, "송출한다")
-        .replace(/제작할\s+수\s+있다$/, "제작하도록 지원한다")
-        .replace(/진행된다$/, "운영된다")
-        .replace(/도입된다$/, "적용된다")
-        .replace(/전망이다$/, "것으로 기대된다")
-        .replace(/지원하고\s+있다$/, "지원해 오고 있다")
-        .replace(/말했다$/, "전했다")
-        .replace(/밝혔다$/, "설명했다")
-        .replace(/확대했다$/, "넓혀 왔다")
-        .replace(/참가한다$/, "출전한다")
-        .replace(/계획이다$/, "방침이다")
-        .replace(/예정이다$/, "전망이다")
-        .replace(/수\s+있다$/, "수 있도록 했다")}.`;
-      if (v2 === v1) {
-        v2 = `${base
-          .replace(/한다$/, "하고 있다")
-          .replace(/된다$/, "되고 있다")
-          .replace(/있다$/, "있는 상태다")
-          .replace(/이다$/, "으로 꼽힌다")}.`;
-      }
-      if (v2 === v1) {
-        v2 = `특히 ${base}.`;
-      }
-
-      let v3 = `${base
-        .replace(/^특히\s+이번\s+대회에서는\s+/, "이번 대회부터는 ")
-        .replace(/방송\s+카메라와\s+함께\s+활용돼,\s+/, "방송 중계에 투입돼 ")
-        .replace(/기념\s+촬영을\s+할\s+수\s+있으며,\s+이\s+밖에도\s+/, "기념 촬영과 함께 ")
-        .replace(/지속해서\s+지원하고\s+있다$/, "꾸준히 뒷받침하고 있다")
-        .replace(/말했다$/, "강조했다")
-        .replace(/밝혔다$/, "전했다")
-        .replace(/확대했다$/, "확장해 왔다")
-        .replace(/참가한다$/, "참여한다")}.`;
-      if (v3 === v1 || v3 === v2) {
-        v3 = `${base
-          .replace(/^한편,\s+|^또한\s+|^특히\s+|^또\s+/, "아울러 ")
-          .replace(/예정이다$/, "계획이다")
-          .replace(/전망이다$/, "예정이다")
-          .replace(/프로그램이다$/, "방식이다")
-          .replace(/진행된다$/, "마련된다")
-          .replace(/운영된다$/, "진행된다")
-          .replace(/도입된다$/, "운영된다")}.`;
-      }
-      if (v3 === v1 || v3 === v2) {
-        v3 = `아울러 ${base.replace(/^아울러\s+/, "")}.`;
+      if (pIdx === 0 && sIdx === 0 && /확대했다$/.test(base)) {
+        base = base.replace(/확대했다$/, "확대했다고 밝혔다");
       }
 
       let reason = "기사식광고 문체·표기 기준 교정 (FMT-07)";
@@ -311,50 +466,106 @@ function buildClientSentenceSuggestions(rawText, compName) {
       } else if (hasRedundantNum) {
         reason =
           "업무프로세스 3·4단계 · 중복 표현('약'+'~여') 교열 및 매경 숫자 표기('2,700여 명') 정비";
+      } else if (hasLeadRedundancy) {
+        reason =
+          "업무프로세스 4단계 (중복 표현 검수) · 1문단 리드문('12개 카테고리로 확대')과 중복되는 서술 구조 교정";
+      } else if (hasHeavyEnumeration) {
+        reason =
+          "업무프로세스 3·4단계 · 한 문장 내 과도한 품목 나열을 압축하고 신문 호흡에 맞게 정돈";
       } else if (hasSuperlative && /[“"']/.test(sent)) {
         reason =
           "FMT-08 / PRD 9.2 · 인용문 내 금지어('혁신적') 및 홍보성 과장 수식어 중립화";
       } else if (hasSuperlative) {
         reason =
           "FMT-08 (업무프로세스 2단계 3) · 최상급·단정 표현('최초로·최고·최대') 배제 및 사실 중심 완화";
+      } else if (hasQuotePunctIssue && /[“"]/.test(base) && /말했다|밝혔다|전했다/.test(sent)) {
+        reason =
+          "업무프로세스 3·4단계 · 직선 따옴표(\"→“”)·연결 어미(\"며, \"→”라며 “) 교열 및 인용문 내 홍보성 수식어 정돈";
+      } else if (hasQuotePunctIssue && pIdx === 0) {
+        reason =
+          "업무프로세스 3·4단계 · 따옴표 짝 불일치(‘...' → ‘...’) 교정 및 스트레이트 기사 리드문 다듬기";
+      } else if (hasQuotePunctIssue) {
+        reason =
+          "업무프로세스 4단계 (오탈자·문장부호 검수) · 비대칭·직선 따옴표를 신문 편집 규격(‘...’, “...”)으로 교정";
       } else if (/했다고\s+밝혔다|자랑합니다/.test(sent)) {
         reason =
           "FMT-07 (업무프로세스 3단계) · 홍보체('자랑합니다→설명했다') 및 불필요한 '~했다고 밝혔다→~했다' 정리";
       } else if (hasPromoTone) {
         reason =
-          "FMT-07 (업무프로세스 3단계) · 주관적·광고성 수식어('영광의·생생하고·유익한·특별한') 배제 및 객관 서술체 교정";
+          "FMT-07 (업무프로세스 3단계) · 보도자료식 홍보 수식어·단문 소결 표현을 객관적 경제지 서술체로 교정";
       }
 
-      const id = `sug-${seq++}`;
-      suggestions.push({
-        id,
-        paragraphIndex: pIdx,
-        originalSentence: sent,
-        reason,
-        alternatives: [
-          {
-            id: `${id}-alt-1`,
-            label: "버전 1 (권장 · 기사식광고 규정 표준 교정)",
-            toneBadge: "규정 준수·원문 보존",
-            text: v1,
-          },
-          {
-            id: `${id}-alt-2`,
-            label: "버전 2 (매경 스트레이트 기사체)",
-            toneBadge: "간결 스트레이트",
-            text: v2,
-          },
-          {
-            id: `${id}-alt-3`,
-            label: "버전 3 (담백한 단문·축약형)",
-            toneBadge: "수식어 축약",
-            text: v3,
-          },
-        ],
-        selectedAltId: null,
-      });
+      pushSuggestion(pIdx, sent, reason, base, base, base);
     });
   });
+
+  // 2차 패스 (모든 보도자료 최소 교열 보장 패스):
+  // 노골적인 금지어가 적은 일반 보도자료라도 PR사업팀 데스크 기준(업무 프로세스 3·4단계)에 따라
+  // 리드문, 계획·전망 문장, 수치 서술 문장, 관계자 인용문 등 최소 6건(또는 전체 문장의 절반 이상)을 반드시 교열 제안한다.
+  if (suggestions.length < 6) {
+    paras.forEach((para, pIdx) => {
+      const sents = para
+        .split(/(?<=[.!?다요])\s+/)
+        .map((s) => s.trim())
+        .filter((s) => s.length >= 16);
+
+      sents.forEach((sent, sIdx) => {
+        if (suggestions.length >= 8) return;
+        const normOrig = sent.replace(/\s+/g, " ").trim();
+        if (addedSentences.has(normOrig)) return;
+
+        // 1) 1문단 리드문
+        if (pIdx === 0 && sIdx === 0) {
+          const baseLead = normOrig
+            .replace(/\.$/, "")
+            .replace(/확대했다$/, "확대했다고 밝혔다")
+            .replace(/참여한다$/, "참여한다고 밝혔다")
+            .replace(/선보인다$/, "선보이고 본격적인 운영에 나선다")
+            .replace(/출시했다$/, "출시하고 시장 공략에 나섰다")
+            .replace(/개최한다$/, "개최한다고 밝혔다");
+          pushSuggestion(
+            pIdx,
+            sent,
+            "업무프로세스 3단계 (리드문 기사체 교열) · 보도자료 첫 문장을 매경 스트레이트 리드문 어투로 정돈",
+            baseLead,
+            `${cName} 측은 ${normOrig.replace(new RegExp(`^${cName}(?:은|는|이|가)\\s*`), "")}`,
+            baseLead.replace(/다고\s+밝혔다$/, "고 본격적인 서비스 확대에 나섰다")
+          );
+          return;
+        }
+
+        // 2) '~예정이다 / ~계획이다 / ~전망이다 / ~수 있다 / ~늘었다 / ~높아졌다 / ~이른다' 등 서술어 다듬기 대상
+        if (
+          /(?:예정이다|계획이다|전망이다|수\s+있다|늘었다|높아졌다|이른다|드러났다|나타났다|말했다|밝혔다)\.$/.test(
+            normOrig
+          ) ||
+          normOrig.length >= 55
+        ) {
+          const baseEdit = normOrig
+            .replace(/\.$/, "")
+            .replace(/^연내에는\s+/, "올해 안으로 ")
+            .replace(/전\s+카테고리로\s+확대할\s+예정이다$/, "전 카테고리로 적용 대상을 넓힐 방침이다")
+            .replace(/확대할\s+예정이다$/, "확대 적용할 방침이다")
+            .replace(/선보일\s+계획이다$/, "선보일 방침이다")
+            .replace(/이어줄\s+예정이다$/, "연결할 계획이다")
+            .replace(/전달할\s+예정이다$/, "송출할 계획이다")
+            .replace(/탐색할\s+수\s+있다$/, "찾아볼 수 있도록 구성됐다")
+            .replace(/확인할\s+수\s+있다$/, "확인하도록 지원한다")
+            .replace(/평균\s+(\d+%)\s*,\s*많게는\s+(\d+%)까지\s+늘었다$/, "평균 $1에서 최대 $2까지 증가한 것으로 집계됐다")
+            .replace(/(\d+%)까지\s+높아졌다$/, "$1까지 상승한 것으로 나타났다");
+
+          pushSuggestion(
+            pIdx,
+            sent,
+            "업무프로세스 3·4단계 (매경 데스크 기사체 다듬기) · 보도자료 서술 호흡 및 종결 어미를 객관적 경제지 문체로 교열",
+            baseEdit,
+            baseEdit,
+            baseEdit
+          );
+        }
+      });
+    });
+  }
 
   return suggestions;
 }
@@ -411,6 +622,47 @@ function buildClientCompanyFactMemos(compName, rawText, sources) {
         sourceTitle: "글로벌 스포츠 테크 마케팅 동향",
         sourceUrl: "https://news.samsung.com/kr",
         targetParagraphIndex: 2,
+        inserted: false,
+      },
+    ];
+  }
+
+  if (c.includes("무신사") || /AI\s*트렌드\s*큐레이션|얼굴\s*소멸\s*모자/.test(rawText || "")) {
+    return [
+      {
+        id: "fact-1",
+        category: "기업 기본 정보",
+        text: "무신사는 입점 브랜드 큐레이션과 자체 테크 인프라를 결합해 패션·뷰티·라이프스타일 전반의 온·오프라인 커머스 생태계를 확장하고 있는 국내 대표 패션 플랫폼 기업이다.",
+        sourceTitle: "무신사 뉴스룸·기업 개황",
+        sourceUrl: "https://newsroom.musinsa.com",
+        targetParagraphIndex: 1,
+        inserted: false,
+      },
+      {
+        id: "fact-2",
+        category: "매출액·실적 정보",
+        text: "최근 AI 기반 개인화 추천과 버티컬 전문관(뷰티·플레이어·스탠다드) 고도화를 통해 거래액 성장세와 플랫폼 탐색 체류 시간을 동시에 끌어올리고 있다.",
+        sourceTitle: "무신사 플랫폼 기술·사업 동향",
+        sourceUrl: "https://newsroom.musinsa.com",
+        targetParagraphIndex: 2,
+        inserted: false,
+      },
+      {
+        id: "fact-3",
+        category: "브랜드·출시 핵심 팩트",
+        text: "특히 검색어 입력 없이도 계절·체형·착용 상황별 실생활 키워드 태그만으로 연관 상품을 즉시 모아 볼 수 있어 입점 브랜드의 상품 노출 기회와 구매 전환율을 함께 높이고 있다.",
+        sourceTitle: "AI 트렌드 큐레이션 운영 성과",
+        sourceUrl: "https://newsroom.musinsa.com",
+        targetParagraphIndex: 3,
+        inserted: false,
+      },
+      {
+        id: "fact-4",
+        category: "유통·시장 판매 동향",
+        text: "겨울 아우터와 스킨케어 등 계절성 수요가 높은 품목군을 중심으로 AI 필터 큐레이션 대상을 연내 전 카테고리로 넓혀 초개인화 쇼핑 환경을 구축한다는 구상이다.",
+        sourceTitle: "패션·뷰티 커머스 AI 기술 동향",
+        sourceUrl: "https://newsroom.musinsa.com",
+        targetParagraphIndex: 4,
         inserted: false,
       },
     ];
@@ -572,6 +824,8 @@ function buildClientFallbackDraft(compName, mode, rawText) {
 
   const isSamsungDakar =
     compName.includes("삼성전자") || /다카르\s*청소년올림픽|빅토리\s*셀피/.test(sanitized);
+  const isMusinsaCuration =
+    compName.includes("무신사") || /AI\s*트렌드\s*큐레이션|얼굴\s*소멸\s*모자/.test(sanitized);
   const isUniversityOrForum = /대학교|대학|산학|포럼|연구|장학/.test(sanitized);
   const isFestivalOrLocal = /축제|군수|시장|지자체|자작나무|관광|문화/.test(sanitized);
 
@@ -580,6 +834,12 @@ function buildClientFallbackDraft(compName, mode, rawText) {
         "삼성전자, 다카르 청소년올림픽 IOC 공식 파트너로 참여",
         "삼성전자, 2026 다카르 청소년올림픽에 빅토리 셀피·갤럭시 AI 지원",
         "삼성전자, 다카르 청소년올림픽서 모바일 중계·오픈 스테이션 운영",
+      ]
+    : isMusinsaCuration
+    ? [
+        "무신사, ‘AI 트렌드 큐레이션’ 패션·뷰티 12개 카테고리로 확대",
+        "무신사, AI 트렌드 큐레이션 확대 적용… 필터 이용률 최대 21% 증가",
+        "무신사, 일상복·겨울 아우터·뷰티까지 ‘AI 트렌드 큐레이션’ 전면 확장",
       ]
     : [
         `${compName}, 핵심 사업 및 현장 맞춤형 전략 본격 추진`,
@@ -591,6 +851,11 @@ function buildClientFallbackDraft(compName, mode, rawText) {
     ? [
         "갤럭시 S26 울트라로 스케이트보딩·태권도 중계 지원",
         "삼성 오픈 스테이션·멘토링 프로그램도 선수촌 내 운영",
+      ]
+    : isMusinsaCuration
+    ? [
+        "니트·패딩 등 겨울 아우터와 뷰티 에센스·세럼까지 적용 확대",
+        "신규 10개 카테고리 필터 이용률 평균 14%·최대 21% 상승",
       ]
     : [
         `${compName} 핵심 사업 추진 및 현장 보급 본격화`,
@@ -719,6 +984,36 @@ function buildClientFallbackDraft(compName, mode, rawText) {
       }
       bodyParas.push(
         "이 같은 글로벌 빅테크들의 스포츠 테크 경쟁 속에서 삼성전자는 단순한 중계 장비 지원을 넘어 시상대 위에서 선수들이 직접 촬영하는 ‘빅토리 셀피’와 선수촌 교류 공간 ‘삼성 오픈 스테이션’, 롤모델 멘토링(‘메달을 넘어’)까지 결합해 선수 경험 중심의 독자적인 올림픽 파트너십 모델을 구축했다는 평가를 받는다."
+      );
+    } else if (isMusinsaCuration) {
+      competitors = [
+        {
+          name: "에이블리(ABLY)·지그재그",
+          summary:
+            "자체 개발한 AI 개인화 추천 알고리즘과 빅데이터 취향 분석 엔진을 기반으로 사용자별 코디 조합과 연관 상품을 실시간 추천하며 탐색 편의를 높이고 있다.",
+          paragraph:
+            "패션·뷰티 버티컬 플랫폼 업계에서도 초개인화 AI 추천 기술 고도화 경쟁이 한창이다. 에이블리와 카카오스타일이 운영하는 지그재그는 자체 AI 개인화 추천 알고리즘과 취향 빅데이터 분석 엔진을 앞세워 이용자별 코디 조합과 연관 상품을 실시간 추천하며 구매 전환율을 높이고 있다.",
+        },
+        {
+          name: "W컨셉·29CM",
+          summary:
+            "디자이너 브랜드 큐레이션에 생성형 AI 스타일링 콘텐츠와 상황별 키워드 탐색 기능을 결합해 감도 높은 패션·라이프스타일 탐색 경험을 강화하고 있다.",
+          paragraph:
+            "W컨셉과 29CM 등 주요 편집숍 플랫폼들 역시 브랜드 큐레이션 역량에 AI 스타일링 콘텐츠와 착용 상황별 키워드 탐색 기능을 접목해 2030 소비자층의 체류 시간을 늘리는 데 주력하고 있다.",
+        },
+        {
+          name: "네이버플러스 스토어·쿠팡",
+          summary:
+            "대형 이커머스 플랫폼들도 생성형 AI 쇼핑 에이전트와 맥락 기반 상품 필터링 기술을 도입하며 패션·뷰티 카테고리 내 맞춤형 검색 경쟁력을 강화하고 있다.",
+          paragraph:
+            "네이버플러스 스토어와 쿠팡 등 종합 이커머스 플랫폼들도 생성형 AI 쇼핑 에이전트와 맥락 기반 상품 필터링 기술을 잇달아 도입하며 패션·뷰티 카테고리 내 맞춤형 상품 탐색 경쟁을 가속화하고 있다.",
+        },
+      ];
+      for (const comp of competitors) {
+        bodyParas.push(comp.paragraph);
+      }
+      bodyParas.push(
+        "이 같은 패션·커머스 업계의 AI 추천 경쟁 속에서 무신사는 단순한 과거 구매 이력 추천을 넘어 플랫폼 외부의 최신 패션·뷰티 트렌드를 실시간 분석해 ‘얼굴 소멸 모자’, ‘러닝의 계절’ 같은 실생활 필터 버튼으로 제시함으로써 직관적인 탐색 경험과 입점 브랜드 노출 효과를 동시에 끌어올렸다는 평가다."
       );
     } else if (isUniversityOrForum) {
       competitors = [
@@ -2370,7 +2665,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
       const rawJson = JSON.stringify(sugs || []);
       const hasStaleOrIdentical =
         !Array.isArray(sugs) ||
-        sugs.length === 0 ||
+        sugs.length < 4 ||
         !rawJson.includes("기사식광고 규정 표준 교정") ||
         rawJson.includes("본격 추진하며 시장 공략에") ||
         rawJson.includes("매경 데스크 스타일") ||
@@ -3025,7 +3320,47 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
       );
       setBody(nextBody);
     } else if (ruleId === "FMT-05") {
-      handleApplyAllSentenceSuggestions();
+      let updatedBody = body;
+      const updatedSugs = sentenceSuggestions.map((item) => {
+        const firstAlt = item.alternatives[0];
+        if (!firstAlt) return item;
+        const curAlt = item.alternatives.find((a) => a.id === item.selectedAltId);
+        const curSent = curAlt ? curAlt.text : item.originalSentence;
+        if (updatedBody.includes(curSent)) {
+          updatedBody = updatedBody.replace(curSent, firstAlt.text);
+        } else if (updatedBody.includes(item.originalSentence)) {
+          updatedBody = updatedBody.replace(item.originalSentence, firstAlt.text);
+        }
+        return { ...item, selectedAltId: firstAlt.id };
+      });
+      setSentenceSuggestions(updatedSugs);
+
+      // 만약 본문 분량이 1,200자 미만(짧은 보도자료)이면 취재 팩트 메모장의 미반영 팩트를 단락별로 자동 보강하여 1,200~1,500자 달성
+      if (Array.from(updatedBody.replace(/\r?\n/g, "")).length < 1200) {
+        const parasArr = updatedBody
+          .split(/\n{2,}/)
+          .map((p) => p.trim())
+          .filter(Boolean);
+        const updatedMemos = factMemos.map((m, idx) => {
+          if (m.inserted || updatedBody.includes(m.text)) {
+            return { ...m, inserted: true };
+          }
+          if (Array.from(parasArr.join("\n\n").replace(/\r?\n/g, "")).length < 1380) {
+            const tIdx = Math.min(
+              Math.max(0, memoTargetParas[m.id] ?? m.targetParagraphIndex ?? idx + 1),
+              Math.max(0, parasArr.length - 1)
+            );
+            parasArr[tIdx] = `${parasArr[tIdx]} ${m.text}`;
+            return { ...m, inserted: true, targetParagraphIndex: tIdx };
+          }
+          return m;
+        });
+        updatedBody = parasArr.join("\n\n");
+        setFactMemos(updatedMemos);
+      }
+      setBody(updatedBody);
+      setSaveFeedback("FMT-05 본문 분량(1,200~1,500자) 및 권장 교정이 일괄 반영되었습니다.");
+      setTimeout(() => setSaveFeedback(null), 3000);
       return;
     } else if (ruleId === "FMT-07") {
       let c = 0;

@@ -145,23 +145,23 @@ export default function NewJobPage() {
   return (
     <div className="min-h-screen bg-surface-subtle">
       <header className="bg-surface border-b-hairline border-line">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
+        <div className="mx-auto flex flex-wrap max-w-[1440px] items-center justify-between gap-2.5 px-4 sm:px-6 py-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             <Link
               href="/jobs"
-              className="inline-flex items-center gap-1.5 text-[14px] leading-[22px] text-ink-muted hover:text-ink"
+              className="inline-flex items-center gap-1.5 text-[14px] leading-[22px] text-ink-muted hover:text-ink whitespace-nowrap shrink-0"
             >
               <ArrowLeft className="h-4 w-4 stroke-[1.5]" />
               <span>작업 목록으로</span>
             </Link>
-            <span className="text-line">|</span>
-            <span className="text-[16px] leading-[24px] font-semibold text-ink">
+            <span className="text-line hidden sm:inline">|</span>
+            <span className="text-[16px] leading-[24px] font-semibold text-ink whitespace-nowrap shrink-0">
               새 작업 등록
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Link href="/guide">
-              <Button type="button" variant="secondary" size="sm" className="gap-1.5">
+              <Button type="button" variant="secondary" size="sm" className="gap-1.5 whitespace-nowrap shrink-0">
                 <FileText className="h-3.5 w-3.5 text-primary stroke-[1.5]" />
                 <span>사용 가이드</span>
               </Button>
@@ -172,31 +172,6 @@ export default function NewJobPage() {
       </header>
 
       <main className="mx-auto max-w-[1240px] p-6 space-y-6">
-        <Card className="p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-[14px] leading-[22px] font-medium text-ink">
-              <FileText className="h-4 w-4 text-primary stroke-[1.5]" />
-              <span>빠른 테스트용 샘플 보도자료 불러오기</span>
-            </div>
-            <span className="text-[12px] leading-[18px] text-ink-muted">
-              클릭하면 아래 입력란에 자동 입력됩니다.
-            </span>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {SAMPLE_PRESETS.map((p, idx) => (
-              <Button
-                key={p.label}
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => applyPreset(idx)}
-              >
-                {p.label}
-              </Button>
-            ))}
-          </div>
-        </Card>
-
         <form onSubmit={handleSubmit} className="space-y-6">
           {error && (
             <div

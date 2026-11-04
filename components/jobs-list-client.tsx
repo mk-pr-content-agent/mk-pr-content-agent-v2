@@ -92,52 +92,52 @@ export function JobsListClient({
   return (
     <div className="min-h-screen bg-surface-subtle">
       <header className="bg-surface border-b-hairline border-line">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-6">
+        <div className="mx-auto flex flex-wrap max-w-[1440px] items-center justify-between gap-3 px-4 sm:px-6 py-3">
+          <div className="flex flex-wrap items-center gap-4">
             <Link
               href="/jobs"
-              className="text-[16px] leading-[24px] font-semibold text-ink"
+              className="text-[16px] leading-[24px] font-semibold text-ink whitespace-nowrap shrink-0"
             >
               매경 PR사업팀 콘텐츠 작성 에이전트
             </Link>
-            <nav className="flex items-center gap-4 text-[14px] leading-[22px]">
+            <nav className="flex flex-wrap items-center gap-3 text-[14px] leading-[22px]">
               <Link
                 href="/jobs"
-                className="font-medium text-primary"
+                className="font-medium text-primary whitespace-nowrap shrink-0"
               >
                 작업 목록
               </Link>
               <Link
                 href="/jobs/new"
-                className="text-ink-muted hover:text-ink"
+                className="text-ink-muted hover:text-ink whitespace-nowrap shrink-0"
               >
                 새 작업
               </Link>
               <Link
                 href="/settings"
-                className="inline-flex items-center gap-1 text-ink-muted hover:text-ink"
+                className="inline-flex items-center gap-1 text-ink-muted hover:text-ink whitespace-nowrap shrink-0"
               >
                 <Settings className="h-3.5 w-3.5 stroke-[1.5]" />
                 <span>룰북·매체 설정</span>
               </Link>
               <Link
                 href="/guide"
-                className="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+                className="inline-flex items-center gap-1 font-medium text-primary hover:underline whitespace-nowrap shrink-0"
               >
                 <BookOpen className="h-3.5 w-3.5 stroke-[1.5]" />
                 <span>사용 가이드</span>
               </Link>
             </nav>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2.5">
             <Link href="/guide">
-              <Button type="button" variant="secondary" size="sm" className="gap-1.5">
+              <Button type="button" variant="secondary" size="sm" className="gap-1.5 whitespace-nowrap shrink-0">
                 <BookOpen className="h-3.5 w-3.5 text-primary stroke-[1.75]" />
                 <span>사용 가이드</span>
               </Button>
             </Link>
             <ApiUsageBar />
-            <span className="text-[12px] leading-[18px] text-ink-muted">
+            <span className="text-[12px] leading-[18px] text-ink-muted whitespace-nowrap">
               {userEmail} ({userRole})
             </span>
             <LogoutButton />
@@ -145,8 +145,8 @@ export function JobsListClient({
         </div>
       </header>
 
-      <main className="mx-auto max-w-[1440px] p-6 space-y-4">
-        <div className="flex items-center justify-between">
+      <main className="mx-auto max-w-[1440px] p-4 sm:p-6 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="text-[20px] leading-[28px] font-semibold text-ink">
               작업 목록
@@ -157,21 +157,21 @@ export function JobsListClient({
           </div>
 
           <Link href="/jobs/new">
-            <Button type="button" variant="primary" className="gap-1.5">
+            <Button type="button" variant="primary" className="gap-1.5 whitespace-nowrap shrink-0">
               <Plus className="h-4 w-4 stroke-[1.5]" />
               <span>새 작업</span>
             </Button>
           </Link>
         </div>
 
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-1 rounded-md border-hairline border-line bg-surface p-1">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-1 rounded-md border-hairline border-line bg-surface p-1">
             {filterTabs.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setFilterStatus(tab.id)}
-                className={`rounded-md px-3 py-1.5 text-[12px] leading-[18px] font-medium transition-colors duration-150 ${
+                className={`whitespace-nowrap shrink-0 rounded-md px-3 py-1.5 text-[12px] leading-[18px] font-medium transition-colors duration-150 ${
                   filterStatus === tab.id
                     ? "bg-primary-subtle text-primary"
                     : "text-ink-muted hover:text-ink"
@@ -182,7 +182,7 @@ export function JobsListClient({
             ))}
           </div>
 
-          <div className="relative w-[320px]">
+          <div className="relative w-full sm:w-[320px]">
             <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-ink-muted stroke-[1.5]" />
             <Input
               placeholder="기업명 또는 기사 제목 검색..."
@@ -193,8 +193,9 @@ export function JobsListClient({
           </div>
         </div>
 
-        <Card className="p-0 overflow-hidden">
-          <div className="grid grid-cols-12 bg-surface-subtle px-4 py-3 border-b-hairline border-line text-[12px] leading-[18px] font-medium text-ink-muted">
+        <Card className="p-0 overflow-x-auto">
+          <div className="min-w-[780px]">
+            <div className="grid grid-cols-12 bg-surface-subtle px-4 py-3 border-b-hairline border-line text-[12px] leading-[18px] font-medium text-ink-muted whitespace-nowrap">
             <div className="col-span-2">판정 / 승인</div>
             <div className="col-span-2">작성 모드</div>
             <div className="col-span-2">기업·기관명</div>
@@ -286,6 +287,7 @@ export function JobsListClient({
               ))}
             </div>
           )}
+          </div>
         </Card>
       </main>
     </div>

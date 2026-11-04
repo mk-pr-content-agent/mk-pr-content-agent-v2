@@ -250,32 +250,52 @@ function buildClientSentenceSuggestions(rawText, compName) {
 
       const v1 = `${base}.`;
       let v2 = `${base
-        .replace(/^특히\s+|^또한\s+|^또\s+/, "")
+        .replace(/^특히\s+|^또한\s+|^또\s+|^한편,\s+/, "")
         .replace(/전달할\s+예정이다$/, "송출한다")
         .replace(/제작할\s+수\s+있다$/, "제작하도록 지원한다")
         .replace(/진행된다$/, "운영된다")
         .replace(/도입된다$/, "적용된다")
         .replace(/전망이다$/, "것으로 기대된다")
-        .replace(/지원하고\s+있다$/, "지원해 오고 있다")}.`;
+        .replace(/지원하고\s+있다$/, "지원해 오고 있다")
+        .replace(/말했다$/, "전했다")
+        .replace(/밝혔다$/, "설명했다")
+        .replace(/확대했다$/, "넓혀 왔다")
+        .replace(/참가한다$/, "출전한다")
+        .replace(/계획이다$/, "방침이다")
+        .replace(/예정이다$/, "전망이다")
+        .replace(/수\s+있다$/, "수 있도록 했다")}.`;
       if (v2 === v1) {
-        v2 = `${base.replace(/다$/, "는 설명이다")}.`;
+        v2 = `${base
+          .replace(/한다$/, "하고 있다")
+          .replace(/된다$/, "되고 있다")
+          .replace(/있다$/, "있는 상태다")
+          .replace(/이다$/, "으로 꼽힌다")}.`;
+      }
+      if (v2 === v1) {
+        v2 = `특히 ${base}.`;
       }
 
       let v3 = `${base
         .replace(/^특히\s+이번\s+대회에서는\s+/, "이번 대회부터는 ")
         .replace(/방송\s+카메라와\s+함께\s+활용돼,\s+/, "방송 중계에 투입돼 ")
         .replace(/기념\s+촬영을\s+할\s+수\s+있으며,\s+이\s+밖에도\s+/, "기념 촬영과 함께 ")
-        .replace(/지속해서\s+지원하고\s+있다$/, "꾸준히 뒷받침하고 있다")}.`;
+        .replace(/지속해서\s+지원하고\s+있다$/, "꾸준히 뒷받침하고 있다")
+        .replace(/말했다$/, "강조했다")
+        .replace(/밝혔다$/, "전했다")
+        .replace(/확대했다$/, "확장해 왔다")
+        .replace(/참가한다$/, "참여한다")}.`;
       if (v3 === v1 || v3 === v2) {
         v3 = `${base
-          .replace(/^한편,\s+|^또한\s+|^특히\s+/, "")
+          .replace(/^한편,\s+|^또한\s+|^특히\s+|^또\s+/, "아울러 ")
           .replace(/예정이다$/, "계획이다")
           .replace(/전망이다$/, "예정이다")
           .replace(/프로그램이다$/, "방식이다")
-          .replace(/진행된다$/, "마련된다")}.`;
+          .replace(/진행된다$/, "마련된다")
+          .replace(/운영된다$/, "진행된다")
+          .replace(/도입된다$/, "운영된다")}.`;
       }
       if (v3 === v1 || v3 === v2) {
-        v3 = `${base.replace(/다$/, "게 된다")}.`;
+        v3 = `아울러 ${base.replace(/^아울러\s+/, "")}.`;
       }
 
       let reason = "기사식광고 문체·표기 기준 교정 (FMT-07)";
@@ -1448,23 +1468,32 @@ function App() {
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const filtered = parsed.filter((item) => {
-            const cName = item?.job?.company_name || "";
-            if (/낫소|유니세프/.test(cName)) return false;
-            const draftTitle = item?.article?.title || item?.draft?.title || "";
-            const draftBody = item?.article?.body || item?.draft?.body || "";
-            const compJson = JSON.stringify(item?.competitors || []);
-            if (
-              cName === "삼성전자" &&
-              (!item?.article ||
-                /신규 핵심 사업 및 현장 맞춤형 전략/.test(draftTitle) ||
-                /골프존|카카오VX|마실파크골프/.test(draftBody) ||
-                /골프존|카카오VX|마실파크골프/.test(compJson))
-            ) {
-              return false;
-            }
-            return true;
-          });
+          const filtered = parsed
+            .filter((item) => {
+              const cName = item?.job?.company_name || "";
+              if (/낫소|유니세프/.test(cName)) return false;
+              const draftTitle = item?.article?.title || item?.draft?.title || "";
+              const draftBody = item?.article?.body || item?.draft?.body || "";
+              const compJson = JSON.stringify(item?.competitors || []);
+              if (
+                cName === "삼성전자" &&
+                (!item?.article ||
+                  /신규 핵심 사업 및 현장 맞춤형 전략/.test(draftTitle) ||
+                  /골프존|카카오VX|마실파크골프/.test(draftBody) ||
+                  /골프존|카카오VX|마실파크골프/.test(compJson))
+              ) {
+                return false;
+              }
+              return true;
+            })
+            .map((item) => {
+              if (item?.article?.body) {
+                item.article.body = item.article.body
+                  .replace(/말했는\s*설명이다/g, "전했다")
+                  .replace(/말했게\s*된다/g, "강조했다");
+              }
+              return item;
+            });
           if (filtered.length > 0) return filtered;
         }
       }
@@ -1472,7 +1501,18 @@ function App() {
     return INITIAL_SEED_JOBS || [];
   });
 
-  const [route, setRoute] = useState({ page: "jobs", jobId: null });
+  const [route, setRoute] = useState(() => {
+    try {
+      const savedRoute = localStorage.getItem("mk_pr_studio_route_v2");
+      if (savedRoute) {
+        const parsedRoute = JSON.parse(savedRoute);
+        if (parsedRoute && typeof parsedRoute === "object" && parsedRoute.page) {
+          return parsedRoute;
+        }
+      }
+    } catch {}
+    return { page: "jobs", jobId: null };
+  });
   const [filterMode, setFilterMode] = useState("all");
   const [filterVerdict, setFilterVerdict] = useState("all");
 
@@ -1481,6 +1521,12 @@ function App() {
       localStorage.setItem("mk_pr_studio_jobs_v2", JSON.stringify(jobsData));
     } catch {}
   }, [jobsData]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mk_pr_studio_route_v2", JSON.stringify(route));
+    } catch {}
+  }, [route]);
 
   function handleDeleteJob(id) {
     if (!window.confirm("이 작업을 목록에서 삭제하시겠습니까?")) return;
@@ -1681,7 +1727,29 @@ function App() {
                       <VerdictBadge verdict={j.verdict} />
                     </td>
                     <td className="py-3.5 px-4 whitespace-nowrap text-[12px] text-ink-muted">
-                      {item.approval ? "승인 완료" : "검수 대기"}
+                      {item.approval ? (
+                        <span className="inline-flex items-center rounded bg-pass-bg px-2 py-0.5 text-[11px] font-semibold text-pass">
+                          ✓ 승인 완료
+                        </span>
+                      ) : (() => {
+                        const appliedSugs = (item.sentenceSuggestions || []).filter(
+                          (s) => Boolean(s.selectedAltId)
+                        ).length;
+                        const insertedMemos = (item.factMemos || []).filter(
+                          (m) => Boolean(m.inserted)
+                        ).length;
+                        if (appliedSugs > 0 || insertedMemos > 0 || item.lastSavedAt) {
+                          return (
+                            <span className="inline-flex items-center gap-1 rounded bg-pass-bg px-2 py-0.5 text-[11px] font-semibold text-pass">
+                              <span>
+                                ✓ 자동 저장됨
+                                {appliedSugs > 0 ? ` (교정 ${appliedSugs}건 반영)` : ""}
+                              </span>
+                            </span>
+                          );
+                        }
+                        return "검수 대기";
+                      })()}
                     </td>
                     <td
                       className="py-3.5 px-4 text-right whitespace-nowrap"
@@ -2257,7 +2325,11 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
 
   const [title, setTitle] = useState(data.article?.title || "");
   const [subtitle, setSubtitle] = useState(data.article?.subtitle || "");
-  const [body, setBody] = useState(data.article?.body || "");
+  const [body, setBody] = useState(() =>
+    (data.article?.body || "")
+      .replace(/말했는\s*설명이다/g, "전했다")
+      .replace(/말했게\s*된다/g, "강조했다")
+  );
   const [captionText, setCaptionText] = useState(() => {
     try {
       return JSON.parse(data.article?.caption_json || "[]").join("\n");
@@ -2279,16 +2351,22 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   const [blankLineCopy, setBlankLineCopy] = useState(true);
   const [includeBylineCopy, setIncludeBylineCopy] = useState(false);
   const [showCmsPreview, setShowCmsPreview] = useState(false);
-  const [checkedItems, setCheckedItems] = useState({});
+  const [checkedItems, setCheckedItems] = useState(() => data.checkedItems || {});
   const [copyFeedback, setCopyFeedback] = useState(null);
   const [saveFeedback, setSaveFeedback] = useState(null);
 
-  // Mode 1 교정 문장 토글 & 취재 팩트 메모장 상태
+  // Mode 1 교정 문장 토글 & 취재 팩트 메모장 상태 (저장된 작업 상태 복원 + 본문과 자동 동기화)
   const [sentenceSuggestions, setSentenceSuggestions] = useState(() => {
+    const initialBody = (data.article?.body || "")
+      .replace(/말했는\s*설명이다/g, "전했다")
+      .replace(/말했게\s*된다/g, "강조했다");
     try {
       const s6Rec = (data.stages || []).find((s) => s.stage === "S6");
       const s6Parsed = s6Rec ? JSON.parse(s6Rec.output_json || "{}") : null;
-      const sugs = s6Parsed?.sentenceSuggestions;
+      const sugs =
+        Array.isArray(data.sentenceSuggestions) && data.sentenceSuggestions.length > 0
+          ? data.sentenceSuggestions
+          : s6Parsed?.sentenceSuggestions;
       const rawJson = JSON.stringify(sugs || []);
       const hasStaleOrIdentical =
         !Array.isArray(sugs) ||
@@ -2305,34 +2383,78 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
           )
         );
       if (!hasStaleOrIdentical) {
-        return sugs;
+        return sugs.map((s) => {
+          const cleanedAlts = (s.alternatives || []).map((a) => ({
+            ...a,
+            text: (a.text || "")
+              .replace(/말했는\s*설명이다/g, "전했다")
+              .replace(/말했게\s*된다/g, "강조했다"),
+          }));
+          let selId = s.selectedAltId || null;
+          if (!selId && initialBody && !initialBody.includes(s.originalSentence)) {
+            const matchedAlt = cleanedAlts.find(
+              (a) => a.text && initialBody.includes(a.text)
+            );
+            if (matchedAlt) selId = matchedAlt.id;
+          }
+          return {
+            ...s,
+            alternatives: cleanedAlts,
+            selectedAltId: selId,
+          };
+        });
       }
     } catch {}
-    return buildClientSentenceSuggestions(
+    const freshSugs = buildClientSentenceSuggestions(
       data.job?.raw_text || "",
       data.job?.company_name || "대상 기업"
     );
+    return freshSugs.map((s) => {
+      if (initialBody && !initialBody.includes(s.originalSentence)) {
+        const matchedAlt = (s.alternatives || []).find(
+          (a) => a.text && initialBody.includes(a.text)
+        );
+        if (matchedAlt) {
+          return { ...s, selectedAltId: matchedAlt.id };
+        }
+      }
+      return s;
+    });
   });
   const [aiProofreadLoading, setAiProofreadLoading] = useState(false);
   const [activeSuggestionId, setActiveSuggestionId] = useState(null);
   const [customAltText, setCustomAltText] = useState("");
-  const [factMemos, setFactMemos] = useState(() =>
-    buildClientCompanyFactMemos(
+  const [factMemos, setFactMemos] = useState(() => {
+    if (
+      Array.isArray(data.factMemos) &&
+      data.factMemos.length > 0 &&
+      !JSON.stringify(data.factMemos).includes("은(는)")
+    ) {
+      return data.factMemos.map((m) => ({
+        ...m,
+        inserted: Boolean(m.inserted || (data.article?.body || "").includes(m.text)),
+      }));
+    }
+    const baseMemos = buildClientCompanyFactMemos(
       data.job?.company_name || "대상 기업",
       data.job?.raw_text || "",
       data.sources || []
-    )
-  );
+    );
+    return baseMemos.map((m) => ({
+      ...m,
+      inserted: Boolean((data.article?.body || "").includes(m.text)),
+    }));
+  });
   const [showFactNotepad, setShowFactNotepad] = useState(effectiveMode === "minimal");
   const [newFactInput, setNewFactInput] = useState("");
   const [newFactUrl, setNewFactUrl] = useState("");
   const [newFactCategory, setNewFactCategory] = useState("기업 기본 정보");
-  const [memoTargetParas, setMemoTargetParas] = useState({});
+  const [memoTargetParas, setMemoTargetParas] = useState(() => data.memoTargetParas || {});
 
   // AI 대화형 기사 수정(채팅 개고) 상태
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
-  const [chatHistory, setChatHistory] = useState([]);
+  const [chatHistory, setChatHistory] = useState(() => data.chatHistory || []);
 
   const rawParagraphs = useMemo(() => {
     const raw = (data.job?.raw_text || "").trim();
@@ -2787,6 +2909,49 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     return runClientHardRules(title, subtitle, body, caps, byline);
   }, [title, subtitle, body, captionText, byline]);
 
+  // 모든 편집 상태(문장 교체, 취재 팩트 메모 반영, 제목·부제·본문 수정, 체크리스트, AI 채팅 내역) 실시간 자동 저장
+  useEffect(() => {
+    const caps = (captionText || "")
+      .split(/\r?\n/)
+      .map((c) => c.trim())
+      .filter(Boolean);
+    onUpdate((prev) => ({
+      ...prev,
+      job: {
+        ...prev.job,
+        options_json: JSON.stringify({ byline }),
+      },
+      article: {
+        ...(prev.article || {}),
+        title,
+        subtitle,
+        body,
+        caption_json: JSON.stringify(caps),
+        ai_notice_included: aiNoticeIncluded ? 1 : 0,
+      },
+      sentenceSuggestions,
+      factMemos,
+      checkedItems,
+      chatHistory,
+      memoTargetParas,
+      findings: liveFindings,
+      lastSavedAt: new Date().toISOString(),
+    }));
+  }, [
+    title,
+    subtitle,
+    body,
+    captionText,
+    byline,
+    aiNoticeIncluded,
+    sentenceSuggestions,
+    factMemos,
+    checkedItems,
+    chatHistory,
+    memoTargetParas,
+    liveFindings,
+  ]);
+
   function handleSave(override = {}) {
     const nextTitle = override.title ?? title;
     const nextSubtitle = override.subtitle ?? subtitle;
@@ -2822,7 +2987,13 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
         caption_json: JSON.stringify(caps),
         ai_notice_included: aiNoticeIncluded ? 1 : 0,
       },
+      sentenceSuggestions,
+      factMemos,
+      checkedItems,
+      chatHistory,
+      memoTargetParas,
       findings: newFindings,
+      lastSavedAt: new Date().toISOString(),
       claims: override.resolveHold
         ? (prev.claims || []).map((c) => ({ ...c, status: "verified" }))
         : prev.claims,
@@ -3793,9 +3964,13 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                     ? "모드 2 · 전면 리라이팅"
                     : "모드 3 · 비교·기획 기사"}
                 </span>
-                {saveFeedback && (
+                {saveFeedback ? (
                   <span className="whitespace-nowrap rounded border-hairline border-pass bg-pass-bg px-2 py-0.5 text-[11px] font-semibold text-pass">
                     ✓ {saveFeedback}
+                  </span>
+                ) : (
+                  <span className="whitespace-nowrap rounded border-hairline border-pass bg-pass-bg px-2 py-0.5 text-[11px] font-semibold text-pass">
+                    ✓ 실시간 자동 저장 중 (뒤로 가기·종료 후에도 작업 유지)
                   </span>
                 )}
               </div>

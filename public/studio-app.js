@@ -134,7 +134,7 @@ function splitKoreanSentences(text) {
   const raw = (text || "").replace(/\s+/g, " ").trim();
   if (!raw) return [];
   return raw
-    .split(/(?<=[.!?][”’"')\]]*)\s+(?![0-9])/)
+    .split(/(?<=[가-힣A-Za-z%)”’"'\]]+[.!?][”’"')\]]*)\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
 }
@@ -385,157 +385,196 @@ function buildClientSentenceSuggestions(rawText, compName) {
       return { v1: v1Quote, v2: v2Quote, v3: v3Quote };
     }
 
+    // ★ 문장 종결 어미를 치환할 때 절대 체이닝(A→B→C 중복 치환)하지 않고 첫 매칭 1회만 적용하는 안전 함수
+    const replaceEndingOnce = (str, rules) => {
+      const s = cleanQuote(str).replace(/\.+$/, "");
+      for (const [pattern, replacement] of rules) {
+        if (pattern.test(s)) {
+          return ensureDot(s.replace(pattern, replacement));
+        }
+      }
+      return ensureDot(s);
+    };
+
     let v1 = ensureDot(stripLongEnglishParens(baseRefined || normOrig));
 
     if (v1 === normOrig || stripQuotes(v1) === stripQuotes(normOrig)) {
-      v1 = ensureDot(
-        stripLongEnglishParens(v1)
-          .replace(/오늘\((\d+일)\)부터/g, "$1일부터")
-          .replace(/오늘\((\d+일)\)/g, "$1일")
-          .replace(/아메리칸\s+클래식을\s+대표하는\s+패션\s+및\s+라이프스타일\s+브랜드/g, "패션·라이프스타일 브랜드")
-          .replace(/장소에\s+구애받지\s+않는\s+브랜드\s+특유의\s+라이프스타일을\s+보여준다\.?$/, "브랜드 고유의 라이프스타일 화보를 선보인다")
-          .replace(/처음\s+선보이는\s+브랜드의/g, "이번에 공개하는")
-          .replace(/집중\s+소개하는/g, "다루는")
-          .replace(/보여준다\.?$/, "선보인다")
-          .replace(/공개한다\.?$/, "선보인다")
-          .replace(/전개한다\.?$/, "진행한다")
-          .replace(/선보인다\.?$/, "공개한다")
-          .replace(/소개한다\.?$/, "선보인다")
-          .replace(/선발매된다\.?$/, "우선 출시된다")
-          .replace(/출시된다\.?$/, "공식 출시된다")
-          .replace(/다시\s+아우터를\s+다룬다\.?$/, "아우터 기획전을 이어간다")
-          .replace(/다룬다\.?$/, "집중 소개한다")
-          .replace(/온라인\s+단독\s+콘텐츠다\.?$/, "온라인 단독 기획 콘텐츠로 구성됐다")
-          .replace(/콘텐츠다\.?$/, "콘텐츠로 구성됐다")
-          .replace(/프로그램이다\.?$/, "프로그램으로 구성됐다")
-          .replace(/서비스다\.?$/, "서비스로 운영된다")
-          .replace(/재킷’이다\.?$/, "재킷’ 등으로 구성됐다")
-          .replace(/확대했다\.?$/, "확대했다고 밝혔다")
-          .replace(/넓혔다\.?$/, "확장했다")
-          .replace(/참여한다\.?$/, "참여한다고 밝혔다")
-          .replace(/운영한다\.?$/, "마련해 운영한다")
-          .replace(/진행한다\.?$/, "진행한다고 밝혔다")
-          .replace(/개최한다\.?$/, "개최한다고 밝혔다")
-          .replace(/출시했다\.?$/, "출시했다고 밝혔다")
-          .replace(/계획이다\.?$/, "방침이다")
-          .replace(/예정이다\.?$/, "계획이다")
-          .replace(/전망이다\.?$/, "것으로 기대된다")
-          .replace(/수\s+있다\.?$/, "수 있도록 구성됐다")
-          .replace(/나타났다\.?$/, "확인됐다")
-          .replace(/드러났다\.?$/, "집계됐다")
-          .replace(/줄었다\.?$/, "감소한 것으로 나타났다")
-          .replace(/늘었다\.?$/, "증가한 것으로 집계됐다")
-          .replace(/높아졌다\.?$/, "상승한 것으로 나타났다")
-          .replace(/말했다\.?$/, "전했다")
-          .replace(/밝혔다\.?$/, "설명했다")
-      );
+      const preCleaned = stripLongEnglishParens(v1)
+        .replace(/오늘\((\d+일)\)부터/g, "$1일부터")
+        .replace(/오늘\((\d+일)\)/g, "$1일")
+        .replace(/아메리칸\s+클래식을\s+대표하는\s+패션\s+및\s+라이프스타일\s+브랜드/g, "패션·라이프스타일 브랜드")
+        .replace(/장소에\s+구애받지\s+않는\s+브랜드\s+특유의/g, "브랜드 고유의")
+        .replace(/처음\s+선보이는\s+브랜드의/g, "처음 공개하는")
+        .replace(/카테고리별\s+상품을\s+집중\s+소개하는/g, "카테고리별 주요 상품을 소개하는")
+        .replace(/집중\s+소개하는/g, "소개하는");
+
+      v1 = replaceEndingOnce(preCleaned, [
+        [/라이프스타일을\s+보여준다$/, "라이프스타일을 선보인다"],
+        [/보여준다$/, "선보인다"],
+        [/선발매된다$/, "우선 출시된다"],
+        [/다시\s+아우터를\s+다룬다$/, "다시 아우터 기획전을 진행한다"],
+        [/다룬다$/, "집중 소개한다"],
+        [/온라인\s+단독\s+콘텐츠다$/, "온라인 단독 기획 콘텐츠다"],
+        [/콘텐츠다$/, "콘텐츠로 구성됐다"],
+        [/프로그램이다$/, "프로그램으로 운영된다"],
+        [/서비스다$/, "서비스로 운영된다"],
+        [/재킷’이다$/, "재킷’ 등으로 구성됐다"],
+        [/동시에\s+전개한다$/, "동시에 진행한다"],
+        [/전개한다$/, "진행한다"],
+        [/공개한다$/, "선보인다"],
+        [/선보인다$/, "공개한다"],
+        [/소개한다$/, "선보인다"],
+        [/출시된다$/, "정식 출시된다"],
+        [/확대했다$/, "확대했다고 밝혔다"],
+        [/넓혔다$/, "확장했다"],
+        [/참여한다$/, "참여한다고 밝혔다"],
+        [/운영한다$/, "마련해 운영한다"],
+        [/진행한다$/, "진행한다고 밝혔다"],
+        [/개최한다$/, "개최한다고 밝혔다"],
+        [/출시했다$/, "출시했다고 밝혔다"],
+        [/계획이다$/, "방침이다"],
+        [/예정이다$/, "계획이다"],
+        [/전망이다$/, "것으로 기대된다"],
+        [/수\s+있다$/, "수 있도록 구성됐다"],
+        [/나타났다$/, "확인됐다"],
+        [/드러났다$/, "집계됐다"],
+        [/줄었다$/, "감소한 것으로 나타났다"],
+        [/늘었다$/, "증가한 것으로 집계됐다"],
+        [/높아졌다$/, "상승한 것으로 나타났다"],
+        [/말했다$/, "전했다"],
+        [/밝혔다$/, "설명했다"],
+      ]);
     }
-    // 어떤 문장이든 v1이 원문과 동일하면 종결어미를 매경 기사체로 변환
+
+    // 여전히 원문과 동일할 때만 단일 어미 변환 1회 적용 (절대 중복 치환 금지)
     if (v1 === normOrig || stripQuotes(v1) === stripQuotes(normOrig)) {
-      v1 = ensureDot(
-        v1
-          .replace(/([가-힣]+)한다\.?$/, "$1하고 나선다")
-          .replace(/([가-힣]+)된다\.?$/, "$1될 예정이다")
-          .replace(/([가-힣]+)했다\.?$/, "$1했다고 밝혔다")
-          .replace(/([가-힣]+)이다\.?$/, "$1으로 구성됐다")
-      );
+      v1 = replaceEndingOnce(v1, [
+        [/([가-힣]+)한다$/, "$1하고 나선다"],
+        [/([가-힣]+)된다$/, "$1될 예정이다"],
+        [/([가-힣]+)했다$/, "$1했다고 밝혔다"],
+        [/([가-힣]+)이다$/, "$1으로 구성됐다"],
+      ]);
     }
 
-    // v2: 매경 스트레이트 기사체 (서술어 및 어순 변환)
-    let v2 = ensureDot(
-      v1
-        .replace(/^특히\s+|^또한\s+|^또\s+|^한편,?\s+/, "")
-        .replace(/브랜드\s+고유의\s+라이프스타일\s+화보를\s+선보인다\.?$/, "브랜드 테마 화보를 제작해 공개한다")
-        .replace(/확대했다고\s+밝혔다\.?$/, "확대하고 서비스 고도화에 나섰다")
-        .replace(/참여한다고\s+밝혔다\.?$/, "참여해 공식 지원에 나선다")
-        .replace(/진행한다고\s+밝혔다\.?$/, "본격 진행한다")
-        .replace(/개최한다고\s+밝혔다\.?$/, "개최한다")
-        .replace(/출시했다고\s+밝혔다\.?$/, "새롭게 선보였다")
-        .replace(/전달할\s+예정이다\.?$/, "송출한다")
-        .replace(/제작할\s+수\s+있다\.?$/, "제작하도록 지원한다")
-        .replace(/진행된다\.?$/, "운영된다")
-        .replace(/운영된다\.?$/, "마련된다")
-        .replace(/도입된다\.?$/, "적용된다")
-        .replace(/우선\s+출시된다\.?$/, "단독 선공개된다")
-        .replace(/선발매된다\.?$/, "단독 선공개된다")
-        .replace(/이어간다\.?$/, "진행한다")
-        .replace(/집중\s+소개한다\.?$/, "순차 공개한다")
-        .replace(/선보인다\.?$/, "공개한다")
-        .replace(/공개한다\.?$/, "내놓는다")
-        .replace(/진행한다\.?$/, "운영한다")
-        .replace(/마련해\s+운영한다\.?$/, "진행한다")
-        .replace(/운영한다\.?$/, "선보인다")
-        .replace(/등으로\s+구성됐다\.?$/, "등을 단독으로 선보인다")
-        .replace(/콘텐츠로\s+구성됐다\.?$/, "콘텐츠를 마련했다")
-        .replace(/구성됐다\.?$/, "마련됐다")
-        .replace(/전망이다\.?$/, "것으로 기대된다")
-        .replace(/지원하고\s+있다\.?$/, "지원해 오고 있다")
-        .replace(/말했다\.?$/, "설명했다")
-        .replace(/전했다\.?$/, "설명했다")
-        .replace(/밝혔다\.?$/, "전했다")
-        .replace(/설명했다\.?$/, "전했다")
-        .replace(/확대했다\.?$/, "넓혀 왔다")
-        .replace(/확장했다\.?$/, "확대 적용했다")
-        .replace(/넓혔다\.?$/, "확대 적용했다")
-        .replace(/참가한다\.?$/, "출전한다")
-        .replace(/계획이다\.?$/, "방침이다")
-        .replace(/방침이다\.?$/, "계획이다")
-        .replace(/예정이다\.?$/, "전망이다")
-        .replace(/수\s+있다\.?$/, "수 있도록 했다")
-        .replace(/확인됐다\.?$/, "나타났다")
-        .replace(/집계됐다\.?$/, "파악됐다")
-    );
+    // v2: 매경 스트레이트 기사체 (원문·v1과 구별되는 깔끔한 단문·스트레이트 종결, 체이닝 금지)
+    const v2Base = v1
+      .replace(/^특히\s+|^또한\s+|^또\s+|^한편,?\s+/, "")
+      .replace(/패션·라이프스타일\s+브랜드/g, "브랜드")
+      .replace(/직접\s+제작한/g, "자체 제작한")
+      .replace(/무신사에서\s+우선\s+출시된다\.?$/, "무신사를 통해 단독 선공개된다.")
+      .replace(/카테고리별\s+주요\s+상품을\s+소개하는/g, "품목별 상품을 순차 공개하는")
+      .replace(/매일\s+오전\s+11시에\s+카테고리가\s+바뀌고/g, "매일 오전 11시 대상 품목이 바뀌며")
+      .replace(/이날\s+오전\s+10시부터\s+15일\s+오후\s+11시\s+59분까지/g, "2일 오전 10시부터 15일까지")
+      .replace(/처음\s+공개하는\s+겨울\s+아이템을/g, "처음 선보이는 브랜드 겨울 아이템을");
+
+    let v2 = replaceEndingOnce(v2Base, [
+      [/라이프스타일을\s+선보인다$/, "라이프스타일 화보를 공개한다"],
+      [/단독\s+선공개된다$/, "단독 선공개된다"],
+      [/우선\s+출시된다$/, "단독 선공개된다"],
+      [/선발매된다$/, "단독 선공개된다"],
+      [/아우터\s+기획전을\s+진행한다$/, "아우터를 다시 선보인다"],
+      [/온라인\s+단독\s+기획\s+콘텐츠다$/, "온라인 단독 기획전이다"],
+      [/온라인\s+단독\s+콘텐츠다$/, "온라인 단독 기획전이다"],
+      [/확대했다고\s+밝혔다$/, "확대하고 서비스 고도화에 나섰다"],
+      [/참여한다고\s+밝혔다$/, "참여해 공식 지원에 나선다"],
+      [/진행한다고\s+밝혔다$/, "본격 진행한다"],
+      [/개최한다고\s+밝혔다$/, "개최한다"],
+      [/출시했다고\s+밝혔다$/, "새롭게 선보였다"],
+      [/전달할\s+예정이다$/, "송출한다"],
+      [/제작할\s+수\s+있다$/, "제작하도록 지원한다"],
+      [/마련해\s+운영한다$/, "진행한다"],
+      [/등으로\s+구성됐다$/, "등을 단독으로 선보인다"],
+      [/콘텐츠로\s+구성됐다$/, "콘텐츠를 마련했다"],
+      [/수\s+있도록\s+구성됐다$/, "수 있도록 했다"],
+      [/구성됐다$/, "마련됐다"],
+      [/진행된다$/, "운영된다"],
+      [/운영된다$/, "마련된다"],
+      [/도입된다$/, "적용된다"],
+      [/이어간다$/, "진행한다"],
+      [/집중\s+소개한다$/, "순차 공개한다"],
+      [/선보인다$/, "공개한다"],
+      [/공개한다$/, "선보인다"],
+      [/진행한다$/, "운영한다"],
+      [/운영한다$/, "선보인다"],
+      [/전망이다$/, "것으로 기대된다"],
+      [/지원하고\s+있다$/, "지원해 오고 있다"],
+      [/말했다$/, "설명했다"],
+      [/전했다$/, "설명했다"],
+      [/밝혔다$/, "전했다"],
+      [/설명했다$/, "전했다"],
+      [/확대했다$/, "넓혀 왔다"],
+      [/확장했다$/, "확대 적용했다"],
+      [/넓혔다$/, "확대 적용했다"],
+      [/참가한다$/, "출전한다"],
+      [/계획이다$/, "방침이다"],
+      [/방침이다$/, "계획이다"],
+      [/예정이다$/, "전망이다"],
+      [/확인됐다$/, "나타났다"],
+      [/집계됐다$/, "파악됐다"],
+    ]);
+
     if (v2 === normOrig || v2 === v1 || stripQuotes(v2) === stripQuotes(normOrig) || stripQuotes(v2) === stripQuotes(v1)) {
-      v2 = ensureDot(
-        v1
-          .replace(/([가-힣]+)한다\.?$/, "$1할 계획이다")
-          .replace(/([가-힣]+)된다\.?$/, "$1되는 방식이다")
-          .replace(/([가-힣]+)했다\.?$/, "$1한 것으로 나타났다")
-          .replace(/([가-힣]+)다\.?$/, "$1는 설명이다")
-      );
+      v2 = replaceEndingOnce(v1, [
+        [/([가-힣]+)한다$/, "$1할 계획이다"],
+        [/([가-힣]+)된다$/, "$1될 예정이다"],
+        [/([가-힣]+)했다$/, "$1한 것으로 나타났다"],
+        [/([가-힣]+)이다$/, "$1으로 마련됐다"],
+      ]);
     }
 
-    // v3: 담백한 단문·축약형 (수식어 축약 및 간결 종결)
-    let v3 = ensureDot(
-      v1
-        .replace(/^특히\s+이번\s+대회에서는\s+/, "이번 대회부터는 ")
-        .replace(/아메리칸\s+클래식을\s+대표하는\s+/g, "")
-        .replace(/패션\s+및\s+라이프스타일\s+브랜드\s+/g, "브랜드 ")
-        .replace(/장소에\s+구애받지\s+않는\s+/g, "")
-        .replace(/브랜드\s+큐레이션\s+콘텐츠\s+/g, "큐레이션 콘텐츠 ")
-        .replace(/라이브\s+커머스\s+방송\s+/g, "라이브 방송 ")
-        .replace(/방송\s+카메라와\s+함께\s+활용돼,\s+/, "방송 중계에 투입돼 ")
-        .replace(/기념\s+촬영을\s+할\s+수\s+있으며,\s+이\s+밖에도\s+/, "기념 촬영과 함께 ")
-        .replace(/지속해서\s+지원하고\s+있다\.?$/, "꾸준히 뒷받침하고 있다")
-        .replace(/우선\s+출시된다\.?$/, "먼저 선보인다")
-        .replace(/단독\s+선공개된다\.?$/, "먼저 출시된다")
-        .replace(/이어간다\.?$/, "운영한다")
-        .replace(/집중\s+소개한다\.?$/, "선보인다")
-        .replace(/선보인다\.?$/, "마련했다")
-        .replace(/공개한다\.?$/, "마련했다")
-        .replace(/진행한다\.?$/, "추진한다")
-        .replace(/마련해\s+운영한다\.?$/, "선보인다")
-        .replace(/운영한다\.?$/, "진행한다")
-        .replace(/등으로\s+구성됐다\.?$/, "등을 출시한다")
-        .replace(/콘텐츠로\s+구성됐다\.?$/, "콘텐츠를 공개한다")
-        .replace(/수\s+있도록\s+구성됐다\.?$/, "하도록 지원한다")
-        .replace(/말했다\.?$/, "강조했다")
-        .replace(/전했다\.?$/, "강조했다")
-        .replace(/설명했다\.?$/, "강조했다")
-        .replace(/밝혔다\.?$/, "덧붙였다")
-        .replace(/확대했다\.?$/, "확장해 왔다")
-        .replace(/확장했다\.?$/, "넓혔다")
-        .replace(/참가한다\.?$/, "참여한다")
-        .replace(/예정이다\.?$/, "구상이다")
-        .replace(/계획이다\.?$/, "구상이다")
-        .replace(/방침이다\.?$/, "구상이다")
-        .replace(/전망이다\.?$/, "예정이다")
-        .replace(/프로그램이다\.?$/, "방식이다")
-        .replace(/서비스다\.?$/, "기능이다")
-        .replace(/진행된다\.?$/, "마련된다")
-        .replace(/운영된다\.?$/, "진행된다")
-        .replace(/도입된다\.?$/, "운영된다")
-    );
+    // v3: 담백한 단문·축약형 (수식어 축약 및 간결 종결, 체이닝 금지)
+    const v3Base = v1
+      .replace(/^특히\s+이번\s+대회에서는\s+/, "이번 대회부터는 ")
+      .replace(/아메리칸\s+클래식을\s+대표하는\s+/g, "")
+      .replace(/패션·라이프스타일\s+브랜드\s+/g, "")
+      .replace(/패션\s+및\s+라이프스타일\s+브랜드\s+/g, "")
+      .replace(/직접\s+제작한\s+/g, "")
+      .replace(/장소에\s+구애받지\s+않는\s+/g, "")
+      .replace(/브랜드\s+큐레이션\s+콘텐츠\s+/g, "큐레이션 콘텐츠 ")
+      .replace(/라이브\s+커머스\s+방송\s+/g, "라이브 방송 ")
+      .replace(/방송\s+카메라와\s+함께\s+활용돼,\s+/, "방송 중계에 투입돼 ")
+      .replace(/기념\s+촬영을\s+할\s+수\s+있으며,\s+이\s+밖에도\s+/, "기념 촬영과 함께 ")
+      .replace(/이날\s+오전\s+10시부터\s+15일\s+오후\s+11시\s+59분까지/g, "오는 15일까지")
+      .replace(/이날\s+오전\s+11시부터\s+9일\s+오전\s+11시까지/g, "오는 9일 오전 11시까지");
+
+    let v3 = replaceEndingOnce(v3Base, [
+      [/지속해서\s+지원하고\s+있다$/, "꾸준히 뒷받침하고 있다"],
+      [/우선\s+출시된다$/, "먼저 선보인다"],
+      [/단독\s+선공개된다$/, "먼저 출시된다"],
+      [/선발매된다$/, "먼저 선보인다"],
+      [/라이프스타일을\s+선보인다$/, "스타일을 제안한다"],
+      [/아우터\s+기획전을\s+진행한다$/, "아우터 라인업을 운영한다"],
+      [/온라인\s+단독\s+기획\s+콘텐츠다$/, "온라인 단독 콘텐츠로 구성됐다"],
+      [/온라인\s+단독\s+콘텐츠다$/, "온라인 단독 콘텐츠로 구성됐다"],
+      [/이어간다$/, "운영한다"],
+      [/집중\s+소개한다$/, "선보인다"],
+      [/마련해\s+운영한다$/, "함께 선보인다"],
+      [/동시에\s+진행한다$/, "동시 운영한다"],
+      [/선보인다$/, "마련했다"],
+      [/공개한다$/, "내놓는다"],
+      [/진행한다$/, "추진한다"],
+      [/운영한다$/, "진행한다"],
+      [/등으로\s+구성됐다$/, "등을 출시한다"],
+      [/콘텐츠로\s+구성됐다$/, "콘텐츠를 공개한다"],
+      [/수\s+있도록\s+구성됐다$/, "하도록 지원한다"],
+      [/말했다$/, "강조했다"],
+      [/전했다$/, "강조했다"],
+      [/설명했다$/, "강조했다"],
+      [/밝혔다$/, "덧붙였다"],
+      [/확대했다$/, "확장해 왔다"],
+      [/확장했다$/, "넓혔다"],
+      [/참가한다$/, "참여한다"],
+      [/예정이다$/, "구상이다"],
+      [/계획이다$/, "구상이다"],
+      [/방침이다$/, "구상이다"],
+      [/전망이다$/, "예정이다"],
+      [/프로그램이다$/, "방식이다"],
+      [/서비스다$/, "기능이다"],
+      [/진행된다$/, "마련된다"],
+      [/운영된다$/, "진행된다"],
+      [/도입된다$/, "운영된다"],
+    ]);
+
     if (
       v3 === normOrig ||
       v3 === v1 ||
@@ -544,14 +583,14 @@ function buildClientSentenceSuggestions(rawText, compName) {
       stripQuotes(v3) === stripQuotes(v1) ||
       stripQuotes(v3) === stripQuotes(v2)
     ) {
-      v3 = ensureDot(
-        v2
-          .replace(/([가-힣]+)계획이다\.?$/, "$1방침이다")
-          .replace(/([가-힣]+)방침이다\.?$/, "$1구상이다")
-          .replace(/([가-힣]+)한다\.?$/, "$1해 나간다")
-          .replace(/([가-힣]+)된다\.?$/, "$1될 전망이다")
-          .replace(/([가-힣]+)했다\.?$/, "$1하며 입지를 넓혔다")
-      );
+      v3 = replaceEndingOnce(v2, [
+        [/([가-힣]+)계획이다$/, "$1방침이다"],
+        [/([가-힣]+)방침이다$/, "$1구상이다"],
+        [/([가-힣]+)예정이다$/, "$1전망이다"],
+        [/([가-힣]+)한다$/, "$1해 나간다"],
+        [/([가-힣]+)된다$/, "$1될 전망이다"],
+        [/([가-힣]+)했다$/, "$1하며 입지를 넓혔다"],
+      ]);
     }
 
     return { v1, v2, v3 };
@@ -3136,78 +3175,66 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   const [copyFeedback, setCopyFeedback] = useState(null);
   const [saveFeedback, setSaveFeedback] = useState(null);
 
-  // Mode 1 교정 문장 토글 & 취재 팩트 메모장 상태 (저장된 작업 상태 복원 + 초기 생성 시 자동 초록색 교체 방지)
+  // Mode 1 교정 문장 토글 & 취재 팩트 메모장 상태 (항상 최신 한국어 교정 엔진 문장을 사용하되, 사용자가 직접 선택한 상태는 보존)
   const [sentenceSuggestions, setSentenceSuggestions] = useState(() => {
     const stripQ = (str) => (str || "").replace(/['‘’"“”\s]/g, "");
+    const freshList = buildClientSentenceSuggestions(
+      data.job?.raw_text || "",
+      data.job?.company_name || "대상 기업"
+    );
     try {
       const s6Rec = (data.stages || []).find((s) => s.stage === "S6");
       const s6Parsed = s6Rec ? JSON.parse(s6Rec.output_json || "{}") : null;
-      const sugs =
+      const savedSugs =
         Array.isArray(data.sentenceSuggestions) && data.sentenceSuggestions.length > 0
           ? data.sentenceSuggestions
           : s6Parsed?.sentenceSuggestions;
-      const rawJson = JSON.stringify(sugs || []);
-      const hasStaleOrIdentical =
-        !Array.isArray(sugs) ||
-        sugs.length < 4 ||
-        !rawJson.includes("기사식광고 규정 표준 교정") ||
-        rawJson.includes("본격 추진하며 시장 공략에") ||
-        rawJson.includes("매경 데스크 스타일") ||
-        /측은\s+[가-힣A-Za-z0-9㈜()]+(?:은|는|이|가)\s/.test(rawJson) ||
-        sugs.some((s) =>
-          (s.alternatives || []).some(
-            (a) => stripQ(a.text) === stripQ(s.originalSentence)
-          )
-        );
-      if (!hasStaleOrIdentical) {
-        const freshList = buildClientSentenceSuggestions(
-          data.job?.raw_text || "",
-          data.job?.company_name || "대상 기업"
-        );
-        return sugs.map((s) => {
-          const freshMatch = freshList.find((f) =>
-            isSameSentenceResilient(f.originalSentence, s.originalSentence)
-          );
-          // 직접 인용문(“...라며 ...라고 말했다”)의 경우 더 정교해진 3버전(인용문 정돈·단일 인용 압축·간접 인용)으로 자동 업그레이드
-          const isTwoPartQuote = /“[^”]+”(?:이라며|라며|며),?\s*“[^”]+”/.test(
-            s.originalSentence || ""
-          );
-          const baseAlts =
-            isTwoPartQuote && freshMatch?.alternatives?.length === 3
-              ? freshMatch.alternatives.map((fa, idx) => ({
-                  ...fa,
-                  id: s.alternatives?.[idx]?.id || `${s.id}-alt-${idx + 1}`,
-                }))
-              : s.alternatives || [];
 
-          const cleanedAlts = baseAlts.map((a) => ({
-            ...a,
-            text: (a.text || "")
-              .replace(/말했는\s*설명이다/g, "전했다")
-              .replace(/말했게\s*된다/g, "강조했다"),
-          }));
-          const selAlt = cleanedAlts.find((a) => a.id === s.selectedAltId);
-          // 따옴표만 바뀐 자동 매칭은 배제하되, 사용자가 선택한 항목은 유지
-          const isValidUserSelection =
-            Boolean(s.selectedAltId) &&
-            Boolean(selAlt) &&
-            stripQ(selAlt.text) !== stripQ(s.originalSentence);
+      if (Array.isArray(savedSugs) && savedSugs.length > 0) {
+        return freshList.map((freshItem) => {
+          const prevMatch = savedSugs.find((s) =>
+            isSameSentenceResilient(s.originalSentence, freshItem.originalSentence)
+          );
+          if (!prevMatch || !prevMatch.selectedAltId) {
+            return { ...freshItem, selectedAltId: null };
+          }
+          // 사용자가 직접 입력한 커스텀 교정문(-custom)인 경우 보존
+          if (String(prevMatch.selectedAltId).endsWith("-custom")) {
+            const customAlt = (prevMatch.alternatives || []).find(
+              (a) => a.id === prevMatch.selectedAltId
+            );
+            if (customAlt && customAlt.text) {
+              const customId = `${freshItem.id}-custom`;
+              return {
+                ...freshItem,
+                alternatives: [
+                  ...freshItem.alternatives,
+                  { ...customAlt, id: customId },
+                ],
+                selectedAltId: customId,
+              };
+            }
+          }
+          // 기존에 버전 1/2/3 중 하나를 사용자가 직접 선택한 경우 해당 버전 번호(1, 2, 3)를 최신 교정문에 매핑
+          const altIdxMatch = String(prevMatch.selectedAltId).match(/-alt-(\d+)$/);
+          const altNum = altIdxMatch ? Number(altIdxMatch[1]) : 1;
+          const mappedAlt =
+            freshItem.alternatives[altNum - 1] || freshItem.alternatives[0];
+          const prevSelAlt = (prevMatch.alternatives || []).find(
+            (a) => a.id === prevMatch.selectedAltId
+          );
+          // 과거 따옴표 자동치환으로 인한 가짜 선택은 제외
+          const wasRealSelection =
+            prevSelAlt &&
+            stripQ(prevSelAlt.text) !== stripQ(prevMatch.originalSentence);
           return {
-            ...s,
-            paragraphIndex:
-              typeof s.paragraphIndex === "number"
-                ? s.paragraphIndex
-                : freshMatch?.paragraphIndex ?? 0,
-            alternatives: cleanedAlts,
-            selectedAltId: isValidUserSelection ? s.selectedAltId : null,
+            ...freshItem,
+            selectedAltId: wasRealSelection && mappedAlt ? mappedAlt.id : null,
           };
         });
       }
     } catch {}
-    return buildClientSentenceSuggestions(
-      data.job?.raw_text || "",
-      data.job?.company_name || "대상 기업"
-    ).map((s) => ({
+    return freshList.map((s) => ({
       ...s,
       selectedAltId: null,
     }));
@@ -3301,23 +3328,54 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     }));
   }
 
-  // 모드 1에서 왼쪽 교정 선택 상태(selectedAltId)와 오른쪽 본문(body)이 항상 100% 일치하도록 자동 동기화
+  // 모드 1에서 원문 단락(rawParagraphs) + 선택된 교정 문장(sentenceSuggestions) + 반영된 팩트 메모(factMemos)를 결합해
+  // 왼쪽 화면과 오른쪽 본문이 100% 동일하게 일치하도록 구성하는 순수 빌더
+  const buildMinimalBodyFromRaw = (rawParas, sugs, memos, memoTargets) => {
+    if (!Array.isArray(rawParas) || rawParas.length === 0) return body;
+    return rawParas
+      .map((rp, rIdx) => {
+        const sents = splitKoreanSentences(rp || "");
+        const mappedSents = sents.map((sent) => {
+          const matchedSug = (sugs || []).find((sug) =>
+            isSameSentenceResilient(sent, sug.originalSentence)
+          );
+          if (matchedSug && matchedSug.selectedAltId) {
+            const selAlt = (matchedSug.alternatives || []).find(
+              (a) => a.id === matchedSug.selectedAltId
+            );
+            if (selAlt && selAlt.text) return selAlt.text;
+          }
+          return sent;
+        });
+        let paraText = mappedSents.join(" ");
+        (memos || []).forEach((m) => {
+          if (!m.inserted) return;
+          const tIdx = Math.min(
+            Math.max(0, memoTargets?.[m.id] ?? m.targetParagraphIndex ?? 1),
+            Math.max(0, rawParas.length - 1)
+          );
+          if (tIdx === rIdx && !paraText.includes(m.text)) {
+            paraText = paraText ? `${paraText} ${m.text}` : m.text;
+          }
+        });
+        return paraText;
+      })
+      .join("\n\n");
+  };
+
+  // 모드 1에서 왼쪽 교정 선택 상태(selectedAltId)나 팩트 메모가 바뀔 때마다 오른쪽 본문(body)을 즉시 100% 동기화
   useEffect(() => {
-    if (effectiveMode !== "minimal") return;
-    setBody((prevBody) => {
-      let nextBody = prevBody;
-      sentenceSuggestions.forEach((sug) => {
-        if (!sug.selectedAltId) return;
-        const selAlt = (sug.alternatives || []).find(
-          (a) => a.id === sug.selectedAltId
-        );
-        if (selAlt && selAlt.text && !nextBody.includes(selAlt.text)) {
-          nextBody = replaceSentenceInBodyResilient(nextBody, sug, selAlt.text);
-        }
-      });
-      return nextBody;
-    });
-  }, [effectiveMode, sentenceSuggestions]);
+    if (effectiveMode !== "minimal" || isDirectTyping || rawParagraphs.length === 0) return;
+    const synced = buildMinimalBodyFromRaw(
+      rawParagraphs,
+      sentenceSuggestions,
+      factMemos,
+      memoTargetParas
+    );
+    if (synced && synced !== body) {
+      setBody(synced);
+    }
+  }, [effectiveMode, isDirectTyping, rawParagraphs, sentenceSuggestions, factMemos, memoTargetParas]);
 
   function handleSelectSentenceAlternative(sugId, altId, customText) {
     const target = sentenceSuggestions.find((s) => s.id === sugId);
@@ -3325,72 +3383,82 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     const chosenAlt = target.alternatives.find((a) => a.id === altId);
     const newText = (customText ?? chosenAlt?.text ?? "").trim();
     if (!newText) return;
-    setBody((prev) => replaceSentenceInBodyResilient(prev, target, newText));
-    setSentenceSuggestions((prev) =>
-      prev.map((item) => {
-        if (item.id !== sugId) return item;
-        if (customText) {
-          const customId = `${sugId}-custom`;
-          const withoutOld = item.alternatives.filter((a) => a.id !== customId);
-          return {
-            ...item,
-            alternatives: [
-              ...withoutOld,
-              {
-                id: customId,
-                label: "직접 다듬은 교정 문장",
-                toneBadge: "담당자 직접 교정",
-                text: newText,
-              },
-            ],
-            selectedAltId: customId,
-          };
-        }
-        return { ...item, selectedAltId: altId };
-      })
-    );
+    const nextList = sentenceSuggestions.map((item) => {
+      if (item.id !== sugId) return item;
+      if (customText) {
+        const customId = `${sugId}-custom`;
+        const withoutOld = item.alternatives.filter((a) => a.id !== customId);
+        return {
+          ...item,
+          alternatives: [
+            ...withoutOld,
+            {
+              id: customId,
+              label: "직접 다듬은 교정 문장",
+              toneBadge: "담당자 직접 교정",
+              text: newText,
+            },
+          ],
+          selectedAltId: customId,
+        };
+      }
+      return { ...item, selectedAltId: altId };
+    });
+    setSentenceSuggestions(nextList);
+    if (effectiveMode === "minimal" && rawParagraphs.length > 0) {
+      setBody(
+        buildMinimalBodyFromRaw(rawParagraphs, nextList, factMemos, memoTargetParas)
+      );
+    } else {
+      setBody((prev) => replaceSentenceInBodyResilient(prev, target, newText));
+    }
     setActiveSuggestionId(null);
   }
 
   function handleRevertSentenceToOriginal(sugId) {
     const target = sentenceSuggestions.find((s) => s.id === sugId);
     if (!target || !target.selectedAltId) return;
-    setBody((prev) =>
-      replaceSentenceInBodyResilient(prev, target, target.originalSentence)
+    const nextList = sentenceSuggestions.map((item) =>
+      item.id === sugId ? { ...item, selectedAltId: null } : item
     );
-    setSentenceSuggestions((prev) =>
-      prev.map((item) =>
-        item.id === sugId ? { ...item, selectedAltId: null } : item
-      )
-    );
+    setSentenceSuggestions(nextList);
+    if (effectiveMode === "minimal" && rawParagraphs.length > 0) {
+      setBody(
+        buildMinimalBodyFromRaw(rawParagraphs, nextList, factMemos, memoTargetParas)
+      );
+    } else {
+      setBody((prev) =>
+        replaceSentenceInBodyResilient(prev, target, target.originalSentence)
+      );
+    }
     setActiveSuggestionId(null);
   }
 
   function handleApplyAllRecommendedSuggestions() {
-    let nextBody = body;
     const nextList = sentenceSuggestions.map((item) => {
       const firstAlt = item.alternatives[0];
       if (!firstAlt) return item;
-      nextBody = replaceSentenceInBodyResilient(nextBody, item, firstAlt.text);
       return { ...item, selectedAltId: firstAlt.id };
     });
-    setBody(nextBody);
     setSentenceSuggestions(nextList);
+    if (effectiveMode === "minimal" && rawParagraphs.length > 0) {
+      setBody(
+        buildMinimalBodyFromRaw(rawParagraphs, nextList, factMemos, memoTargetParas)
+      );
+    }
   }
 
   function handleRevertAllSuggestions() {
-    let nextBody = body;
-    const nextList = sentenceSuggestions.map((item) => {
-      if (!item.selectedAltId) return item;
-      nextBody = replaceSentenceInBodyResilient(
-        nextBody,
-        item,
-        item.originalSentence
-      );
-      return { ...item, selectedAltId: null };
-    });
-    setBody(nextBody);
+    const nextList = sentenceSuggestions.map((item) => ({
+      ...item,
+      selectedAltId: null,
+    }));
     setSentenceSuggestions(nextList);
+    if (effectiveMode === "minimal" && rawParagraphs.length > 0) {
+      setBody(
+        buildMinimalBodyFromRaw(rawParagraphs, nextList, factMemos, memoTargetParas)
+      );
+    }
     setActiveSuggestionId(null);
   }
 
@@ -4321,29 +4389,32 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   }
 
   function renderMinimalParagraphStudio(para, paraIdx) {
-    const sents = splitKoreanSentences(para || "");
+    // 모드 1에서는 왼쪽 원문 단락(rawParagraphs[paraIdx])과 동일한 문장 배열을 기준으로 렌더링하여
+    // 왼쪽에서 '✓ 교체됨'으로 바뀐 문장이 오른쪽 화면에서 누락되거나 불일치하는 현상을 원천 차단
+    const basePara =
+      !isDirectTyping && rawParagraphs[paraIdx] ? rawParagraphs[paraIdx] : para || "";
+    const sents = splitKoreanSentences(basePara);
+    const insertedMemosForPara = factMemos.filter((m) => {
+      if (!m.inserted) return false;
+      const tIdx = Math.min(
+        Math.max(0, memoTargetParas?.[m.id] ?? m.targetParagraphIndex ?? 1),
+        Math.max(0, rawParagraphs.length - 1)
+      );
+      return tIdx === paraIdx;
+    });
+
     return (
       <div className="leading-[26px] text-[14px] text-ink break-keep">
         {sents.map((sent, sIdx) => {
-          const matchedSug = sentenceSuggestions.find((sug) => {
-            const selAlt = sug.alternatives.find(
-              (a) => a.id === sug.selectedAltId
-            );
-            const curTarget = selAlt ? selAlt.text : sug.originalSentence;
-            return (
-              isSameSentenceResilient(sent, curTarget) ||
+          const matchedSug = sentenceSuggestions.find(
+            (sug) =>
               isSameSentenceResilient(sent, sug.originalSentence) ||
               (sug.alternatives || []).some((a) =>
                 isSameSentenceResilient(sent, a.text)
               )
-            );
-          });
-          const matchedFact = factMemos.find(
-            (m) => m.inserted && (sent === m.text || sent.includes(m.text))
           );
 
-          // 1단계 최소 수정 핵심 원칙: 사용자가 실제로 교정을 선택(isReplaced)한 문장만 초록색으로 교체해 보여주고,
-          // 아직 선택하지 않은 문장은 원문 그대로 깨끗하게 유지!
+          // 1단계 최소 수정 핵심 원칙: 사용자가 실제로 교정을 선택(selectedAltId)한 문장은 오른쪽에서도 100% 초록색으로 교체 표시!
           if (matchedSug && Boolean(matchedSug.selectedAltId)) {
             const selAlt = matchedSug.alternatives.find(
               (a) => a.id === matchedSug.selectedAltId
@@ -4368,26 +4439,23 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
             );
           }
 
-          if (matchedFact) {
-            return (
-              <span
-                key={`${paraIdx}-${sIdx}-fact`}
-                className="mr-1.5 inline rounded bg-pass-bg text-pass border-b-2 border-pass font-semibold px-1.5 py-0.5 break-keep"
-              >
-                <span className="mr-1 inline-flex items-center whitespace-nowrap rounded bg-pass px-1.5 py-0.2 text-[10px] font-semibold text-surface select-none">
-                  📌 {matchedFact.category}
-                </span>
-                <span>{sent}</span>
-              </span>
-            );
-          }
-
           return (
             <span key={`${paraIdx}-${sIdx}`} className="mr-1.5">
               {sent}
             </span>
           );
         })}
+        {insertedMemosForPara.map((matchedFact) => (
+          <span
+            key={`${paraIdx}-fact-${matchedFact.id}`}
+            className="mr-1.5 inline rounded bg-pass-bg text-pass border-b-2 border-pass font-semibold px-1.5 py-0.5 break-keep"
+          >
+            <span className="mr-1 inline-flex items-center whitespace-nowrap rounded bg-pass px-1.5 py-0.2 text-[10px] font-semibold text-surface select-none">
+              📌 {matchedFact.category}
+            </span>
+            <span>{matchedFact.text}</span>
+          </span>
+        ))}
       </div>
     );
   }

@@ -303,17 +303,126 @@ function replaceSentenceInBodyResilient(bodyText, sug, newText) {
   return updatedParas.join("\n\n");
 }
 
-// 원문과 후보 문장이 실질적으로 교정되었는지(단순 따옴표·문장부호·영문괄호·단일 종결어미만 바뀐 경우 배제) 검증하는 전역 함수
+// 불필요한 긴 영문·불어(악센트 포함) 병기 제거 (단, IOC·AI·ESG·FW·SS·B2B·MOU·CES·IT·SNS·SUV·ETF 등 핵심 약어는 보존)
+function stripLongForeignParens(str) {
+  return (str || "").replace(
+    /\(([A-Za-z\u00C0-\u024F][A-Za-z\u00C0-\u024F0-9\s,&·+'’-]{2,})\)/g,
+    (full, inner) => {
+      const trimmed = inner.trim();
+      if (/^[A-Z0-9&/+]{2,5}$/.test(trimmed)) return full;
+      return "";
+    }
+  );
+}
+
+// 보도자료 상단 요약 불릿('- ...', '▲ ...', '■ ...' 또는 서술어 없이 끝나는 요약줄) 판별
+function isTopSummaryBulletLine(str) {
+  const s = (str || "").trim();
+  if (!s) return false;
+  if (/^(?:[-•▪▶▷▲■●◆※]|\d+\.)\s*/.test(s)) return true;
+  if (
+    s.length <= 95 &&
+    !/(?:다|요|음|함)[.!?]?[”’"')\]]*$/.test(s) &&
+    /(?:\.{2,}|…|자리매김|눈길|주목|기대|돌파|급증|확대|출시|선보여|강화|선정|개최)$/.test(s)
+  ) {
+    return true;
+  }
+  return false;
+}
+
+// 상단 요약 불릿('- ‘립 글로이밤’ 3분기 매출 350% 급증...아떼 대표 상품으로 자리매김')을 완결된 매경 스트레이트 문장 3종으로 변환
+function convertSummaryBulletToNewspaperSentences(bulletStr, compName) {
+  const raw = stripLongForeignParens(bulletStr || "")
+    .replace(/^(?:[-•▪▶▷▲■●◆※]|\d+\.)\s*/, "")
+    .replace(/‘([^’']+)'/g, "‘$1’")
+    .replace(/'([^’']+)’/g, "‘$1’")
+    .replace(/"([^"]+)"/g, "“$1”")
+    .replace(/'([^']+)'/g, "‘$1’")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!raw) return null;
+
+  const normalizeTailVerb = (tail, styleIdx) => {
+    const t = tail.replace(/\.+$/, "").trim();
+    if (/자리매김$/.test(t)) {
+      return styleIdx === 1
+        ? t.replace(/자리매김$/, "자리 잡았다.")
+        : styleIdx === 2
+        ? t.replace(/대표\s*상품으로\s*자리매김$/, "핵심 라인업으로 안착했다.").replace(/자리매김$/, "안착했다.")
+        : t.replace(/자리매김$/, "성장세를 견인하고 있다.");
+    }
+    if (/급증|증가|상승|성장$/.test(t)) {
+      return styleIdx === 1 ? `${t}했다.` : styleIdx === 2 ? `${t}한 것으로 집계됐다.` : `${t}세를 이어가고 있다.`;
+    }
+    if (/돌파|달성|기록$/.test(t)) {
+      return styleIdx === 1 ? `${t}했다.` : styleIdx === 2 ? `${t}하며 성과를 냈다.` : `${t}한 것으로 나타났다.`;
+    }
+    if (/출시|공개|선보여|오픈$/.test(t)) {
+      return styleIdx === 1
+        ? `${t.replace(/선보여$/, "출시")}한다.`
+        : styleIdx === 2
+        ? `${t.replace(/선보여$/, "공개")}하며 시장 공략에 나선다.`
+        : `${t.replace(/선보여$/, "출시")}해 소비자 접점을 넓힌다.`;
+    }
+    if (/확대|강화|추진|전개|진행|운영|개최$/.test(t)) {
+      return styleIdx === 1 ? `${t}한다.` : styleIdx === 2 ? `${t}에 나선다.` : `${t}할 방침이다.`;
+    }
+    if (/(?:다|요)\.?$/.test(t)) {
+      return `${t.replace(/\.+$/, "")}.`;
+    }
+    return styleIdx === 1 ? `${t}했다.` : styleIdx === 2 ? `${t}하며 주목받고 있다.` : `${t}한 것으로 나타났다.`;
+  };
+
+  if (/(?:\.{2,}|…)/.test(raw)) {
+    const parts = raw.split(/(?:\.{2,}|…)/).map((p) => p.trim()).filter(Boolean);
+    if (parts.length >= 2) {
+      let head = parts[0]
+        .replace(/([‘'“"][^’'”"]+[’'”"])\s+(\d+분기|\d+월|올해|지난해)\s+매출\s+(\d+%)\s*급증/, "$1은 $2 매출이 $3 급증하며")
+        .replace(/매출\s+(\d+%)\s*급증$/, "매출이 $1 급증하며")
+        .replace(/(\d+%)\s*(급증|증가|상승|성장)$/, "$1 $2하며")
+        .replace(/(돌파|달성|확대|출시)$/, "$1하며");
+      if (!/(?:며|고|해|어)$/.test(head)) {
+        head = `${head} 성과를 기록하며`;
+      }
+      const tail = parts.slice(1).join(" ");
+      return {
+        v1: `${head} ${normalizeTailVerb(tail, 1)}`,
+        v2: `주력 라인업인 ${head.replace(/은\s+/, "의 ")} ${normalizeTailVerb(tail, 2)}`,
+        v3: `${head.replace(/급증하며$/, "증가한 가운데")} ${normalizeTailVerb(tail, 3)}`,
+      };
+    }
+  }
+
+  return {
+    v1: normalizeTailVerb(raw, 1),
+    v2: normalizeTailVerb(raw, 2),
+    v3: normalizeTailVerb(raw, 3),
+  };
+}
+
+// 원문과 후보 문장이 실질적으로 교정되었는지(단순 따옴표·문장부호·단일 종결어미 1단어 치환 배제) 검증하는 전역 함수
 function normalizeCoreSentenceForDiff(str, stripParens = false) {
   let s = str || "";
   if (stripParens) {
-    s = s.replace(/\([A-Za-z][A-Za-z0-9\s,&·+-]{3,}\)/g, "");
+    s = stripLongForeignParens(s);
   }
   return s.replace(/['‘’"“”`.,!?~·\-—()[\]\s]/g, "").trim();
 }
 
 function extractHangulAndNumbers(str) {
   return (str || "").replace(/[^가-힣0-9]/g, "");
+}
+
+function stripTrivialPredicateEnding(str) {
+  return extractHangulAndNumbers(str)
+    .replace(
+      /(?:이라고|라고|고)?(?:말했다|전했다|밝혔다|설명했다|강조했다|덧붙였다|전한다|말한다|밝힌다)$/,
+      ""
+    )
+    .replace(
+      /(?:예정이다|계획이다|전망이다|방침이다|구상이다|예정임|계획임)$/,
+      ""
+    );
 }
 
 function computeHangulBigramSimilarity(a, b) {
@@ -345,31 +454,41 @@ function isMeaningfullyEditedSentence(origSent, candidateSent) {
   const normCand = normalizeCoreSentenceForDiff(candidateSent, false);
   if (!normCand || normCand === normOrig) return false;
 
-  // 한글·숫자 텍스트가 원문과 100% 똑같다면(따옴표·영문 병기만 바뀐 경우) 사용자는 원문과 동일하다고 느끼므로 제외
+  // 원문이 경어체(~합니다/~입니다/~됩니다)나 하드룰 위반(전화번호·URL·평 단독 표기) 또는 영문/불어 긴 괄호 병기를 포함해 이를 제거·교정한 경우
+  const fixedPoliteOrHardFormat =
+    /(?:합니다|입니다|됩니다|있습니다|밝혔습니다)\.?$/.test(origSent.trim()) ||
+    /https?:\/\/|www\.|\d+\s*평(?!\s*\()/.test(origSent) ||
+    (stripLongForeignParens(origSent) !== origSent &&
+      stripLongForeignParens(candidateSent) === candidateSent);
+
   const koOrig = extractHangulAndNumbers(origSent);
   const koCand = extractHangulAndNumbers(candidateSent);
-  if (!koCand || koOrig === koCand) return false;
+  if (!koCand) return false;
+  if (koOrig === koCand && !fixedPoliteOrHardFormat) return false;
 
-  // 긴 인용문·서술문에서 오직 마지막 '말했다/전했다/밝혔다/설명했다' 등 서술어 한 단어만 바뀐 경우 제외
-  const stripSpeechVerb = (s) =>
-    extractHangulAndNumbers(s).replace(
-      /(?:이라고|라고|고)?(?:말했다|전했다|밝혔다|설명했다|강조했다|덧붙였다|전한다|말한다)$/,
-      ""
-    );
-  if (koOrig.length >= 25 && stripSpeechVerb(origSent) === stripSpeechVerb(candidateSent)) {
+  // ★ 문장 길이와 무관하게 오직 맨 끝 한 단어('말했다↔전했다↔밝혔다', '예정이다↔계획이다↔전망이다↔방침이다↔구상이다')만 기계적으로 바뀐 경우는 무조건 제외!
+  if (
+    !fixedPoliteOrHardFormat &&
+    stripTrivialPredicateEnding(origSent) === stripTrivialPredicateEnding(candidateSent)
+  ) {
     return false;
   }
 
-  // 원문이 경어체(~합니다/~입니다/~됩니다)나 금지어(전화번호·URL·평 단독 표기)를 포함해 이를 교정한 경우는 길이와 무관하게 유효한 교정으로 인정
-  const fixedPoliteOrHardFormat =
-    /(?:합니다|입니다|됩니다|있습니다|밝혔습니다)\.?$/.test(origSent.trim()) ||
-    /https?:\/\/|www\.|\d+\s*평(?!\s*\()/.test(origSent);
+  // 비문 패턴('~는 ... 구성할 계획이다', '~는 ... 구성할 구상이다', '방식이는 설명이다' 등) 원천 차단
+  if (
+    /(?:키트는|제품은|상품은|에디션은|컬러는|패키지는|행사는|캠페인은)\s+[^.]*구성할\s+(?:계획|구상|방침)이다/.test(
+      candidateSent
+    ) ||
+    /방식이는\s*설명이다|말했는\s*설명이다|말했게\s*된다/.test(candidateSent)
+  ) {
+    return false;
+  }
 
-  // 45자 이상의 긴 일반 문장에서 원문과의 한글 바이그램 유사도가 90%를 초과하면(거의 바뀐 게 없는 문장) 제외
+  // 일반 문장에서 원문과의 한글 바이그램 유사도가 93%를 초과하면(실질적 교정이 거의 없는 경우) 제외
   if (
     !fixedPoliteOrHardFormat &&
-    koOrig.length >= 45 &&
-    computeHangulBigramSimilarity(origSent, candidateSent) > 0.9
+    koOrig.length >= 22 &&
+    computeHangulBigramSimilarity(origSent, candidateSent) > 0.93
   ) {
     return false;
   }
@@ -402,10 +521,27 @@ function filterDistinctValidAlternatives(origSent, rawCandidates, sugId) {
     if (!isMeaningfullyEditedSentence(origSent, text)) return;
     const ko = extractHangulAndNumbers(text);
     if (seenHangul.has(ko)) return;
-    // 이미 채택된 후보와 85% 이상 유사한(단어 1개만 바뀐) 중복 옵션도 배제하여 확실히 다른 교정안만 노출
-    if (accepted.some((prev) => computeHangulBigramSimilarity(prev, text) > 0.85)) {
-      return;
-    }
+
+    // 이미 채택된 후보와 비교할 때:
+    // (1) 끝 어미 1단어(계획이다/방침이다/구상이다, 말했다/전했다/설명했다)만 다른 경우 배제
+    // (2) 문장 후반부 서술절(마지막 10글자)이 완전히 같으면서 전체 유사도가 90%를 넘는 경우만 중복으로 배제
+    // -> 앞부분 고유명사·상품명이 같더라도 서술 구조가 다르면 버전 1·2·3이 모두 정상 노출됨!
+    const isDuplicateOfAccepted = accepted.some((prev) => {
+      if (stripTrivialPredicateEnding(prev) === stripTrivialPredicateEnding(text)) {
+        return true;
+      }
+      const prevKo = extractHangulAndNumbers(prev);
+      const sameTail =
+        prevKo.length >= 12 &&
+        ko.length >= 12 &&
+        prevKo.slice(-10) === ko.slice(-10);
+      if (sameTail && computeHangulBigramSimilarity(prev, text) > 0.9) {
+        return true;
+      }
+      return computeHangulBigramSimilarity(prev, text) > 0.95;
+    });
+    if (isDuplicateOfAccepted) return;
+
     seenHangul.add(ko);
     accepted.push(text);
   });
@@ -430,7 +566,7 @@ function buildClientSentenceSuggestions(rawText, compName) {
   const firstParaText = paras[0] || "";
   const cName = extractCompanyNameFromRawText(rawText, compName);
 
-  // 어떤 업종·형태의 한국어 문장이 들어와도 서로 다른 실제 매경 기사체 문장 후보를 생성
+  // 어떤 업종·형태의 한국어 문장이 들어와도 주술 호응이 자연스럽고 서로 확실히 다른 매경 기사체 3종 후보를 생성
   function buildThreeDistinctNewspaperVersions(origSent, baseRefined, pIdx, sIdx) {
     const cleanQuote = (str) =>
       (str || "")
@@ -448,22 +584,46 @@ function buildClientSentenceSuggestions(rawText, compName) {
       return s ? `${s}.` : origSent;
     };
 
-    const stripQuotes = (str) =>
-      (str || "").replace(/['‘’"“”]/g, "").replace(/\s+/g, " ").trim();
-
     const normOrig = origSent.replace(/\s+/g, " ").trim();
 
-    // 불필요한 긴 영문 병기 제거 (단, IOC·AI·ESG·FW·B2B·MOU·CES·IT·SNS·SUV·ETF 등 핵심 약어는 보존)
-    const stripLongEnglishParens = (str) =>
-      str.replace(/\(([A-Za-z][A-Za-z0-9\s,&·+-]{3,})\)/g, (full, inner) => {
-        const trimmed = inner.trim();
-        if (/^[A-Z0-9&/+]{2,5}$/.test(trimmed)) return full;
-        return "";
-      });
+    // 0) 보도자료 상단 요약 불릿('- ‘립 글로이밤’ 3분기 매출 350% 급증...아떼 대표 상품으로 자리매김' 등) 전용 변환기
+    if (isTopSummaryBulletLine(normOrig)) {
+      const bulletVersions = convertSummaryBulletToNewspaperSentences(normOrig, cName);
+      if (bulletVersions) return bulletVersions;
+    }
 
-    // ★ 관계자 직접 인용문(“...라며 ...라고 말했다”) 전용 교정 생성기:
-    // 단순 어미('말했다→전했다')만 바꾸지 않고 인용문 내 홍보 수식어 정돈(v1), 핵심 발언 단일 인용 압축(v2), 간접 인용 기사체(v3)로 명확히 차별화
-    const twoPartQuoteMatch = cleanQuote(stripLongEnglishParens(normOrig)).match(
+    // 1) 무생물 주어('시딩 키트는', '신제품은', '에디션은', '패키지는' 등) + '~로 구성할 예정이다 / ~로 구성될 예정이다' 주술 호응 교정기
+    const kitComposeMatch = cleanQuote(stripLongForeignParens(normOrig)).match(
+      /^([가-힣A-Za-z0-9\s‘’'"]+?(?:키트|패키지|에디션|세트|라인업|컬렉션|상품|제품|박스|구성품))(은|는)\s+(.+?)로\s+구성(?:할|될)\s+(?:예정|계획)이다\.?$/
+    );
+    if (kitComposeMatch) {
+      const subj = kitComposeMatch[1].trim();
+      const particle = kitComposeMatch[2];
+      const items = kitComposeMatch[3].trim();
+      return {
+        v1: ensureDot(`${subj}${particle} ${items}로 구성됐다`),
+        v2: ensureDot(`${subj}에는 ${items} 등이 포함된다`),
+        v3: ensureDot(`${items} 등을 담은 ${subj}도 함께 선보인다`),
+      };
+    }
+
+    // 2) '~가 국내 ... 브랜드와 협업을 진행하는 것은 이번이 처음이다' 유형 전용 3종 교정기
+    const firstCollabMatch = cleanQuote(stripLongForeignParens(normOrig)).match(
+      /^([가-힣A-Za-z0-9\s‘’'"]+?(?:이|가))\s+(.+?)와\s+협업을\s+진행하는\s+것은\s+이번이\s+처음이다\.?$/
+    );
+    if (firstCollabMatch) {
+      const subj = firstCollabMatch[1].trim();
+      const subjNoParticle = subj.replace(/(?:이|가)$/, "").trim();
+      const partner = firstCollabMatch[2].trim();
+      return {
+        v1: ensureDot(`${subj} ${partner}와 공식 협업에 나선 것은 이번이 처음이다`),
+        v2: ensureDot(`${subjNoParticle}의 ${partner} 첫 공식 협업 사례다`),
+        v3: ensureDot(`${withTopicParticle(subjNoParticle)} 이번 프로젝트를 통해 ${partner}와 처음으로 손잡았다`),
+      };
+    }
+
+    // 3) 관계자 직접 인용문(“...라며 ...라고 말했다” 및 단일 인용문 “...”라고 말했다) 전용 교정 생성기
+    const twoPartQuoteMatch = cleanQuote(stripLongForeignParens(normOrig)).match(
       /^(.*?)“([^”]+)”(?:이라며|라며|며),?\s*“([^”]+)”(?:이라고|라고)\s*(말했다|전했다|밝혔다|강조했다|설명했다)\.?$/
     );
     if (twoPartQuoteMatch) {
@@ -484,7 +644,6 @@ function buildClientSentenceSuggestions(rawText, compName) {
         .replace(/앞으로도\s+차별화된\s+/g, "앞으로도 다양한 ")
         .replace(/지속적으로\s+확대할\s+것$/g, "지속 확대해 나갈 계획")
         .trim();
-      const qVerb = twoPartQuoteMatch[4] === "말했다" ? "전했다" : "말했다";
       const getQuoteParticle = (qStr) => {
         const clean = (qStr || "").trim();
         if (clean.endsWith("다")) return "고";
@@ -495,14 +654,11 @@ function buildClientSentenceSuggestions(rawText, compName) {
         return "라고";
       };
       const qParticle = getQuoteParticle(q2);
-
-      // 앞 인용구(q1)는 이미 리드문·본문에 나온 중복 배경 설명이므로 과감히 덜어내고 핵심 발언(q2)만 남긴 v1,
-      // 간접 인용 스트레이트 기사체로 전환한 v2로 구성하여 원문과 똑같아 보이는 현상을 원천 차단
       const q1Short = q1
         .replace(/^겨울\s+시즌을\s+맞아\s+/, "")
         .replace(/의\s+신상품을\s+선보인다$/, " 신상품 출시와 관련해")
         .replace(/의\s+신상품을\s+선보이게\s+됐다$/, " 신상품 출시와 관련해");
-      const v1Quote = ensureDot(`${speakerPrefix} “${q2}”${qParticle} ${qVerb}`);
+      const v1Quote = ensureDot(`${speakerPrefix} “${q2}”${qParticle} 전했다`);
       const indirectBody = q2
         .replace(/풀어낸\s+만큼\s+고객들이\s+/, "풀어내 고객들이 ")
         .replace(/경험할\s+수\s+있을\s+것$/, "경험할 수 있도록 기획했다고 밝혔다")
@@ -513,13 +669,59 @@ function buildClientSentenceSuggestions(rawText, compName) {
       const v2Quote = ensureDot(
         indirectBody !== q2
           ? `${speakerPrefix} ${indirectBody}`
-          : `${speakerPrefix} “${q1}”${getQuoteParticle(q1)} 설명했다`
+          : `${speakerPrefix} “${q1}”라며 “${q2}”${qParticle} 설명했다`
       );
       const v3Quote =
         q1Short !== q1
-          ? ensureDot(`${speakerPrefix} ${q1Short} “${q2}”${qParticle} 설명했다`)
-          : v2Quote;
+          ? ensureDot(`${speakerPrefix} ${q1Short} “${q2}”${qParticle} 강조했다`)
+          : ensureDot(`${speakerPrefix} “${q1}”${getQuoteParticle(q1)} 덧붙였다`);
       return { v1: v1Quote, v2: v2Quote, v3: v3Quote };
+    }
+
+    // 단일 인용문(“...”라고 말했다/밝혔다) 교정기
+    const singleQuoteMatch = cleanQuote(stripLongForeignParens(normOrig)).match(
+      /^(.*?)“([^”]+)”(?:이라고|라고|고)\s*(말했다|전했다|밝혔다|강조했다|설명했다)\.?$/
+    );
+    if (singleQuoteMatch) {
+      const speakerPrefix = singleQuoteMatch[1].trim();
+      const rawQ = singleQuoteMatch[2].trim();
+      const cleanedQ = rawQ
+        .replace(/혁신적인\s+|독보적인\s+|압도적인\s+|최고의\s+/g, "")
+        .replace(/만전을\s+기했다$/, "준비를 마쳤다")
+        .replace(/박차를\s+가하겠다$/, "속도를 내겠다")
+        .replace(/최선을\s+다하겠다$/, "역량을 집중하겠다")
+        .trim();
+      const indirectQ = cleanedQ
+        .replace(/([가-힣]+)하겠다$/, "$1하겠다고 밝혔다")
+        .replace(/([가-힣]+할)\s+(?:예정|계획|것)(?:이다)?$/, "$1 계획이라고 설명했다")
+        .replace(/준비를\s+마쳤다$/, "사전 준비를 마쳤다고 설명했다")
+        .replace(/기대한다$/, "기대한다고 전했다");
+      const getQP = (qStr) => {
+        const clean = (qStr || "").trim();
+        if (clean.endsWith("다")) return "고";
+        const lc = clean.charCodeAt(clean.length - 1);
+        if (lc >= 0xac00 && lc <= 0xd7a3) return (lc - 0xac00) % 28 !== 0 ? "이라고" : "라고";
+        return "라고";
+      };
+      return {
+        v1: ensureDot(
+          cleanedQ !== rawQ
+            ? `${speakerPrefix} “${cleanedQ}”${getQP(cleanedQ)} 전했다`
+            : `${speakerPrefix} ${indirectQ !== cleanedQ ? indirectQ : `“${cleanedQ}”${getQP(cleanedQ)} 설명했다`}`
+        ),
+        v2: ensureDot(
+          indirectQ !== cleanedQ
+            ? `${speakerPrefix} ${indirectQ}`
+            : `${speakerPrefix} ${cleanedQ.replace(/다$/, "다고 밝혔다")}`
+        ),
+        v3: ensureDot(
+          `${speakerPrefix} ${cleanedQ
+            .replace(/경험할\s+수\s+있도록\s+/, "경험하도록 ")
+            .replace(/([가-힣]+)하겠다$/, "$1한다는 방침이다")
+            .replace(/([가-힣]+할)\s+(?:예정|계획|것)(?:이다)?$/, "$1 방침이라고 강조했다")
+            .replace(/마쳤다$/, "마무리했다고 덧붙였다")}`
+        ),
+      };
     }
 
     // ★ 문장 종결 어미를 치환할 때 절대 체이닝(A→B→C 중복 치환)하지 않고 첫 매칭 1회만 적용하는 안전 함수
@@ -533,143 +735,155 @@ function buildClientSentenceSuggestions(rawText, compName) {
       return ensureDot(s);
     };
 
-    let v1 = ensureDot(stripLongEnglishParens(baseRefined || normOrig));
+    const preCleaned = stripLongForeignParens(cleanQuote(baseRefined || normOrig))
+      .replace(/100년\s+전통의\s+/g, "")
+      .replace(/오늘\((\d+일)\)부터/g, "$1부터")
+      .replace(/오늘\((\d+일)\)/g, "$1")
+      .replace(/이날\s+오전\s+10시부터\s+15일\s+오후\s+11시\s+59분까지/g, "2일 오전 10시부터 15일까지")
+      .replace(/아메리칸\s+클래식을\s+대표하는\s+패션\s+및\s+라이프스타일\s+브랜드/g, "패션·라이프스타일 브랜드")
+      .replace(/장소에\s+구애받지\s+않는\s+브랜드\s+특유의/g, "브랜드 고유의")
+      .replace(/처음\s+선보이는\s+브랜드의/g, "처음 공개하는")
+      .replace(/카테고리별\s+상품을\s+집중\s+소개하는/g, "카테고리별 주요 상품을 소개하는")
+      .replace(/집중\s+소개하는/g, "소개하는")
+      .replace(/에서\s+영감을\s+받아/g, "에서 모티브를 얻어")
+      .replace(/따뜻한\s+색감과\s+윤기를\s+더해/g, "색감과 보습감을 결합해");
+
+    // v1: 기사식광고 규정 표준 교열 (불필요한 영문 병기·수식어 정리 + 매경 스트레이트 서술어)
+    let v1 = replaceEndingOnce(preCleaned, [
+      [/협업해\s+(.+?)(?:을|를)\s+선보인다고\s+밝혔다$/, "손잡고 $1을 출시한다고 밝혔다"],
+      [/선보인다고\s+밝혔다$/, "출시한다고 밝혔다"],
+      [/개최한다고\s+밝혔다$/, "연다고 밝혔다"],
+      [/라이프스타일을\s+보여준다$/, "라이프스타일을 선보인다"],
+      [/보여준다$/, "선보인다"],
+      [/선발매된다$/, "우선 출시된다"],
+      [/다시\s+아우터를\s+다룬다$/, "아우터 기획전을 다시 진행한다"],
+      [/다룬다$/, "집중 소개한다"],
+      [/온라인\s+단독\s+콘텐츠다$/, "온라인 단독 기획 콘텐츠다"],
+      [/콘텐츠다$/, "콘텐츠로 구성됐다"],
+      [/프로그램이다$/, "프로그램으로 운영된다"],
+      [/서비스다$/, "서비스로 운영된다"],
+      [/재킷’이다$/, "재킷’ 등으로 구성됐다"],
+      [/구현했다$/, "완성했다"],
+      [/탄생했다$/, "기획됐다"],
+      [/증정한다$/, "사은품으로 제공한다"],
+      [/만나볼\s+수\s+있다$/, "구매할 수 있다"],
+      [/동시에\s+전개한다$/, "동시에 진행한다"],
+      [/전개한다$/, "진행한다"],
+      [/공개한다$/, "선보인다"],
+      [/선보인다$/, "출시한다"],
+      [/소개한다$/, "선보인다"],
+      [/출시된다$/, "정식 출시된다"],
+      [/확대했다$/, "확대했다고 밝혔다"],
+      [/넓혔다$/, "확장했다"],
+      [/참여한다$/, "참여한다고 밝혔다"],
+      [/운영한다$/, "마련해 운영한다"],
+      [/진행한다$/, "진행한다고 밝혔다"],
+      [/개최한다$/, "개최한다고 밝혔다"],
+      [/출시했다$/, "출시했다고 밝혔다"],
+      [/로\s+구성할\s+예정이다$/, "로 구성됐다"],
+      [/로\s+구성될\s+예정이다$/, "로 구성된다"],
+      [/선보일\s+(?:계획|예정)이다$/, "선보인다"],
+      [/진행할\s+(?:계획|예정)이다$/, "진행한다"],
+      [/운영할\s+(?:계획|예정)이다$/, "운영한다"],
+      [/출시할\s+(?:계획|예정)이다$/, "출시한다"],
+      [/개최할\s+(?:계획|예정)이다$/, "개최한다"],
+      [/전달할\s+(?:계획|예정)이다$/, "송출한다"],
+      [/제공할\s+(?:계획|예정)이다$/, "제공한다"],
+      [/이어줄\s+(?:계획|예정)이다$/, "연결한다"],
+      [/([가-힣]+)할\s+(?:계획|예정)이다$/, "$1한다"],
+      [/전망이다$/, "것으로 기대된다"],
+      [/수\s+있다$/, "수 있도록 구성됐다"],
+      [/나타났다$/, "확인됐다"],
+      [/드러났다$/, "집계됐다"],
+      [/줄었다$/, "감소한 것으로 나타났다"],
+      [/늘었다$/, "증가한 것으로 집계됐다"],
+      [/높아졌다$/, "상승한 것으로 나타났다"],
+    ]);
 
     if (
-      v1 === normOrig ||
-      stripQuotes(v1) === stripQuotes(normOrig) ||
-      normalizeCoreSentenceForDiff(v1, true) === normalizeCoreSentenceForDiff(normOrig, true)
+      extractHangulAndNumbers(v1) === extractHangulAndNumbers(normOrig) ||
+      stripTrivialPredicateEnding(v1) === stripTrivialPredicateEnding(normOrig)
     ) {
-      const preCleaned = stripLongEnglishParens(v1)
-        .replace(/오늘\((\d+일)\)부터/g, "$1부터")
-        .replace(/오늘\((\d+일)\)/g, "$1")
-        .replace(/이날\s+오전\s+10시부터\s+15일\s+오후\s+11시\s+59분까지/g, "2일 오전 10시부터 15일까지")
-        .replace(/아메리칸\s+클래식을\s+대표하는\s+패션\s+및\s+라이프스타일\s+브랜드/g, "패션·라이프스타일 브랜드")
-        .replace(/장소에\s+구애받지\s+않는\s+브랜드\s+특유의/g, "브랜드 고유의")
-        .replace(/처음\s+선보이는\s+브랜드의/g, "처음 공개하는")
-        .replace(/카테고리별\s+상품을\s+집중\s+소개하는/g, "카테고리별 주요 상품을 소개하는")
-        .replace(/집중\s+소개하는/g, "소개하는");
-
       v1 = replaceEndingOnce(preCleaned, [
-        [/라이프스타일을\s+보여준다$/, "라이프스타일을 선보인다"],
-        [/보여준다$/, "선보인다"],
-        [/선발매된다$/, "우선 출시된다"],
-        [/다시\s+아우터를\s+다룬다$/, "아우터 기획전을 다시 진행한다"],
-        [/다룬다$/, "집중 소개한다"],
-        [/온라인\s+단독\s+콘텐츠다$/, "온라인 단독 기획 콘텐츠다"],
-        [/콘텐츠다$/, "콘텐츠로 구성됐다"],
-        [/프로그램이다$/, "프로그램으로 운영된다"],
-        [/서비스다$/, "서비스로 운영된다"],
-        [/재킷’이다$/, "재킷’ 등으로 구성됐다"],
-        [/동시에\s+전개한다$/, "동시에 진행한다"],
-        [/전개한다$/, "진행한다"],
-        [/공개한다$/, "선보인다"],
-        [/선보인다$/, "공개한다"],
-        [/소개한다$/, "선보인다"],
-        [/출시된다$/, "정식 출시된다"],
-        [/확대했다$/, "확대했다고 밝혔다"],
-        [/넓혔다$/, "확장했다"],
-        [/참여한다$/, "참여한다고 밝혔다"],
-        [/운영한다$/, "마련해 운영한다"],
-        [/진행한다$/, "진행한다고 밝혔다"],
-        [/개최한다$/, "개최한다고 밝혔다"],
-        [/출시했다$/, "출시했다고 밝혔다"],
-        [/계획이다$/, "방침이다"],
-        [/예정이다$/, "계획이다"],
-        [/전망이다$/, "것으로 기대된다"],
-        [/수\s+있다$/, "수 있도록 구성됐다"],
-        [/나타났다$/, "확인됐다"],
-        [/드러났다$/, "집계됐다"],
-        [/줄었다$/, "감소한 것으로 나타났다"],
-        [/늘었다$/, "증가한 것으로 집계됐다"],
-        [/높아졌다$/, "상승한 것으로 나타났다"],
-        [/말했다$/, "전했다"],
-        [/밝혔다$/, "설명했다"],
-      ]);
-    }
-
-    // 여전히 원문과 동일할 때만 단일 어미 변환 1회 적용 (절대 중복 치환 금지)
-    if (v1 === normOrig || stripQuotes(v1) === stripQuotes(normOrig)) {
-      v1 = replaceEndingOnce(v1, [
-        [/([가-힣]+)한다$/, "$1하고 나선다"],
+        [/([가-힣]+)한다$/, "$1하며 본격 운영에 나선다"],
         [/([가-힣]+)된다$/, "$1될 예정이다"],
-        [/([가-힣]+)했다$/, "$1했다고 밝혔다"],
+        [/([가-힣]+)했다$/, "$1했다고 설명했다"],
         [/([가-힣]+)이다$/, "$1으로 구성됐다"],
       ]);
     }
 
-    // v2: 매경 스트레이트 기사체 (원문·v1과 구별되는 깔끔한 단문·스트레이트 종결, 체이닝 금지)
-    const v2Base = v1
+    // v2: 매경 스트레이트 기사체 (v1과 확실히 구별되는 어순·서술 구조)
+    const v2Base = preCleaned
       .replace(/^특히\s+|^또한\s+|^또\s+|^한편,?\s+/, "")
+      .replace(/생활문화기업\s+LF의\s+뷰티\s+브랜드\s+/g, "LF 뷰티 브랜드 ")
       .replace(/패션·라이프스타일\s+브랜드/g, "브랜드")
       .replace(/직접\s+제작한/g, "자체 제작한")
-      .replace(/무신사에서\s+우선\s+출시된다\.?$/, "무신사를 통해 단독 선공개된다.")
+      .replace(/에서\s+모티브를\s+얻어/g, "의 핵심 특징을 반영해")
       .replace(/카테고리별\s+주요\s+상품을\s+소개하는/g, "품목별 상품을 순차 공개하는")
-      .replace(/매일\s+오전\s+11시에\s+카테고리가\s+바뀌고/g, "매일 오전 11시 대상 품목이 바뀌며")
-      .replace(/이날\s+오전\s+10시부터\s+15일\s+오후\s+11시\s+59분까지/g, "2일 오전 10시부터 15일까지")
-      .replace(/처음\s+공개하는\s+겨울\s+아이템을/g, "처음 선보이는 브랜드 겨울 아이템을");
+      .replace(/매일\s+오전\s+11시에\s+카테고리가\s+바뀌고/g, "매일 오전 11시 대상 품목이 바뀌며");
 
     let v2 = replaceEndingOnce(v2Base, [
-      [/테마\s+화보를\s+통해\s+브랜드\s+고유의\s+라이프스타일을\s+선보인다$/, "테마 화보로 브랜드 고유의 스타일을 담아냈다"],
-      [/라이프스타일을\s+선보인다$/, "라이프스타일 화보를 공개한다"],
-      [/단독\s+선공개된다$/, "단독 선공개된다"],
-      [/우선\s+출시된다$/, "단독 선공개된다"],
-      [/선발매된다$/, "단독 선공개된다"],
-      [/아우터\s+기획전을\s+다시\s+진행한다$/, "아우터 품목을 다시 선보인다"],
-      [/다시\s+아우터\s+기획전을\s+진행한다$/, "아우터 품목을 다시 선보인다"],
-      [/아우터\s+기획전을\s+진행한다$/, "아우터 품목을 다시 선보인다"],
-      [/온라인\s+단독\s+기획\s+콘텐츠다$/, "온라인 단독 기획전이다"],
-      [/온라인\s+단독\s+콘텐츠다$/, "온라인 단독 기획전이다"],
-      [/확대했다고\s+밝혔다$/, "확대하고 서비스 고도화에 나섰다"],
-      [/참여한다고\s+밝혔다$/, "참여해 공식 지원에 나선다"],
-      [/진행한다고\s+밝혔다$/, "본격 진행한다"],
-      [/개최한다고\s+밝혔다$/, "개최한다"],
-      [/출시했다고\s+밝혔다$/, "새롭게 선보였다"],
-      [/전달할\s+예정이다$/, "송출한다"],
+      [/협업해\s+(.+?)(?:을|를)\s+선보인다고\s+밝혔다$/, "협업한 $1을 공식 출시한다"],
+      [/손잡고\s+(.+?)(?:을|를)\s+출시한다고\s+밝혔다$/, "협업한 $1을 공식 출시한다"],
+      [/선보인다고\s+밝혔다$/, "공식 출시한다"],
+      [/출시한다고\s+밝혔다$/, "공식 출시한다"],
+      [/테마\s+화보를\s+통해\s+브랜드\s+고유의\s+라이프스타일을\s+보여준다$/, "테마 화보로 브랜드 고유의 스타일을 담아냈다"],
+      [/라이프스타일을\s+(?:보여준다|선보인다)$/, "라이프스타일 화보를 공개한다"],
+      [/무신사에서\s+(?:선발매된다|우선\s+출시된다)$/, "무신사를 통해 단독 선공개된다"],
+      [/(?:선발매된다|우선\s+출시된다)$/, "단독 선공개된다"],
+      [/(?:다시\s+아우터를\s+다룬다|아우터\s+기획전을\s+다시\s+진행한다)$/, "아우터 품목을 다시 선보인다"],
+      [/온라인\s+단독\s+(?:기획\s+)?콘텐츠다$/, "온라인 단독 기획전으로 마련됐다"],
+      [/구현했다$/, "살린 것이 특징이다"],
+      [/완성했다$/, "살린 것이 특징이다"],
+      [/기획됐다$/, "개발됐다"],
+      [/증정한다$/, "구매 고객에게 전달한다"],
+      [/사은품으로\s+제공한다$/, "구매 고객에게 전달한다"],
+      [/만나볼\s+수\s+있다$/, "통해 공식 판매된다"],
+      [/구매할\s+수\s+있다$/, "통해 공식 판매된다"],
+      [/로\s+구성할\s+예정이다$/, "등이 포함된다"],
+      [/로\s+구성될\s+예정이다$/, "등으로 마련된다"],
+      [/로\s+구성됐다$/, "등이 포함된다"],
+      [/선보일\s+(?:계획|예정)이다$/, "순차 공개한다"],
+      [/진행할\s+(?:계획|예정)이다$/, "본격 운영에 나선다"],
+      [/운영할\s+(?:계획|예정)이다$/, "마련해 선보인다"],
+      [/출시할\s+(?:계획|예정)이다$/, "시장에 내놓는다"],
+      [/전달할\s+예정이다$/, "실시간 송출한다"],
       [/제작할\s+수\s+있다$/, "제작하도록 지원한다"],
-      [/마련해\s+운영한다$/, "진행한다"],
-      [/등으로\s+구성됐다$/, "등을 단독으로 선보인다"],
-      [/콘텐츠로\s+구성됐다$/, "콘텐츠를 마련했다"],
-      [/수\s+있도록\s+구성됐다$/, "수 있도록 했다"],
-      [/구성됐다$/, "마련됐다"],
-      [/진행된다$/, "운영된다"],
-      [/운영된다$/, "마련된다"],
-      [/도입된다$/, "적용된다"],
-      [/이어간다$/, "진행한다"],
-      [/집중\s+소개한다$/, "순차 공개한다"],
-      [/선보인다$/, "공개한다"],
-      [/공개한다$/, "선보인다"],
+      [/참여한다$/, "참여해 공식 지원에 나선다"],
+      [/동시에\s+(?:전개한다|진행한다)$/, "동시 운영에 들어간다"],
+      [/전개한다$/, "운영한다"],
       [/진행한다$/, "운영한다"],
       [/운영한다$/, "선보인다"],
-      [/전망이다$/, "것으로 기대된다"],
-      [/지원하고\s+있다$/, "지원해 오고 있다"],
-      [/말했다$/, "설명했다"],
-      [/전했다$/, "설명했다"],
-      [/밝혔다$/, "전했다"],
-      [/설명했다$/, "전했다"],
-      [/확대했다$/, "넓혀 왔다"],
-      [/확장했다$/, "확대 적용했다"],
+      [/공개한다$/, "내놓는다"],
+      [/선보인다$/, "공개한다"],
+      [/소개한다$/, "순차 공개한다"],
+      [/확대했다$/, "확대하고 서비스 고도화에 나섰다"],
       [/넓혔다$/, "확대 적용했다"],
-      [/참가한다$/, "출전한다"],
-      [/계획이다$/, "방침이다"],
-      [/방침이다$/, "계획이다"],
-      [/예정이다$/, "전망이다"],
-      [/확인됐다$/, "나타났다"],
-      [/집계됐다$/, "파악됐다"],
+      [/드러났다$/, "집중된 것으로 파악됐다"],
+      [/나타났다$/, "집계됐다"],
+      [/줄었다$/, "소폭 감소한 것으로 집계됐다"],
+      [/늘었다$/, "상승세를 기록했다"],
     ]);
 
-    if (v2 === normOrig || v2 === v1 || stripQuotes(v2) === stripQuotes(normOrig) || stripQuotes(v2) === stripQuotes(v1)) {
-      v2 = replaceEndingOnce(v1, [
-        [/([가-힣]+)한다$/, "$1할 계획이다"],
-        [/([가-힣]+)된다$/, "$1될 예정이다"],
-        [/([가-힣]+)했다$/, "$1한 것으로 나타났다"],
+    if (
+      extractHangulAndNumbers(v2) === extractHangulAndNumbers(normOrig) ||
+      extractHangulAndNumbers(v2) === extractHangulAndNumbers(v1) ||
+      stripTrivialPredicateEnding(v2) === stripTrivialPredicateEnding(v1)
+    ) {
+      v2 = replaceEndingOnce(v2Base, [
+        [/([가-힣]+)한다$/, "$1하며 소비자 접점을 넓힌다"],
+        [/([가-힣]+)된다$/, "$1되어 운영된다"],
+        [/([가-힣]+)했다$/, "$1한 것으로 집계됐다"],
         [/([가-힣]+)이다$/, "$1으로 마련됐다"],
       ]);
     }
 
-    // v3: 담백한 단문·축약형 (수식어 축약 및 간결 종결, 체이닝 금지)
-    const v3Base = v1
+    // v3: 담백한 단문·축약형 (수식어 축약 및 간결한 경제지 종결)
+    const v3Base = preCleaned
       .replace(/^특히\s+이번\s+대회에서는\s+/, "이번 대회부터는 ")
+      .replace(/^특히\s+|^또한\s+|^또\s+|^한편,?\s+/, "")
+      .replace(/생활문화기업\s+LF의\s+뷰티\s+브랜드\s+/g, "LF ")
+      .replace(/프랑스\s+프리미엄\s+버터\s+브랜드\s+/g, "프랑스 버터 브랜드 ")
       .replace(/아메리칸\s+클래식을\s+대표하는\s+/g, "")
       .replace(/패션·라이프스타일\s+브랜드\s+/g, "")
       .replace(/패션\s+및\s+라이프스타일\s+브랜드\s+/g, "")
@@ -677,67 +891,56 @@ function buildClientSentenceSuggestions(rawText, compName) {
       .replace(/장소에\s+구애받지\s+않는\s+/g, "")
       .replace(/브랜드\s+큐레이션\s+콘텐츠\s+/g, "큐레이션 콘텐츠 ")
       .replace(/라이브\s+커머스\s+방송\s+/g, "라이브 방송 ")
-      .replace(/방송\s+카메라와\s+함께\s+활용돼,\s+/, "방송 중계에 투입돼 ")
-      .replace(/기념\s+촬영을\s+할\s+수\s+있으며,\s+이\s+밖에도\s+/, "기념 촬영과 함께 ")
+      .replace(/에서\s+모티브를\s+얻어/g, "를 콘셉트로 삼아")
       .replace(/2일\s+오전\s+10시부터\s+15일까지/g, "오는 15일까지")
       .replace(/이날\s+오전\s+10시부터\s+15일\s+오후\s+11시\s+59분까지/g, "오는 15일까지")
       .replace(/이날\s+오전\s+11시부터\s+9일\s+오전\s+11시까지/g, "오는 9일 오전 11시까지");
 
     let v3 = replaceEndingOnce(v3Base, [
+      [/협업해\s+(.+?)(?:을|를)\s+선보인다고\s+밝혔다$/, "협업한 $1을 새롭게 내놓는다"],
+      [/선보인다고\s+밝혔다$/, "새롭게 내놓는다"],
       [/지속해서\s+지원하고\s+있다$/, "꾸준히 뒷받침하고 있다"],
-      [/우선\s+출시된다$/, "먼저 선보인다"],
-      [/단독\s+선공개된다$/, "먼저 출시된다"],
-      [/선발매된다$/, "먼저 선보인다"],
-      [/라이프스타일을\s+선보인다$/, "스타일을 제안한다"],
-      [/아우터\s+기획전을\s+다시\s+진행한다$/, "아우터 라인업을 재차 운영한다"],
-      [/다시\s+아우터\s+기획전을\s+진행한다$/, "아우터 라인업을 재차 운영한다"],
-      [/아우터\s+기획전을\s+진행한다$/, "아우터 라인업을 운영한다"],
-      [/온라인\s+단독\s+기획\s+콘텐츠다$/, "온라인 단독 콘텐츠로 구성됐다"],
-      [/온라인\s+단독\s+콘텐츠다$/, "온라인 단독 콘텐츠로 구성됐다"],
-      [/이어간다$/, "운영한다"],
-      [/집중\s+소개한다$/, "선보인다"],
+      [/(?:선발매된다|우선\s+출시된다)$/, "먼저 선보인다"],
+      [/라이프스타일을\s+(?:보여준다|선보인다)$/, "스타일을 제안한다"],
+      [/(?:다시\s+아우터를\s+다룬다|아우터\s+기획전을\s+다시\s+진행한다)$/, "아우터 라인업을 재차 운영한다"],
+      [/온라인\s+단독\s+(?:기획\s+)?콘텐츠다$/, "온라인 단독 콘텐츠로 구성됐다"],
+      [/구현했다$/, "연출하도록 제형을 설계했다"],
+      [/완성했다$/, "연출하도록 제형을 설계했다"],
+      [/기획됐다$/, "새롭게 구성했다"],
+      [/증정한다$/, "증정 프로모션도 함께 진행한다"],
+      [/만나볼\s+수\s+있다$/, "에서 순차적으로 선보인다"],
+      [/로\s+구성할\s+예정이다$/, "등을 담아 함께 출시한다"],
+      [/로\s+구성될\s+예정이다$/, "등을 담아 선보인다"],
+      [/선보일\s+(?:계획|예정)이다$/, "순차 출시할 방침이다"],
+      [/진행할\s+(?:계획|예정)이다$/, "추진한다는 방침이다"],
+      [/운영할\s+(?:계획|예정)이다$/, "운영에 들어간다"],
+      [/출시할\s+(?:계획|예정)이다$/, "정식 출시할 방침이다"],
+      [/전달할\s+예정이다$/, "전달한다는 방침이다"],
       [/마련해\s+운영한다$/, "함께 선보인다"],
-      [/동시에\s+진행한다$/, "동시 운영한다"],
+      [/동시에\s+(?:전개한다|진행한다)$/, "동시 출시한다"],
       [/선보인다$/, "마련했다"],
       [/공개한다$/, "내놓는다"],
       [/진행한다$/, "추진한다"],
       [/운영한다$/, "진행한다"],
-      [/등으로\s+구성됐다$/, "등을 출시한다"],
-      [/콘텐츠로\s+구성됐다$/, "콘텐츠를 공개한다"],
-      [/수\s+있도록\s+구성됐다$/, "하도록 지원한다"],
-      [/말했다$/, "강조했다"],
-      [/전했다$/, "강조했다"],
-      [/설명했다$/, "강조했다"],
-      [/밝혔다$/, "덧붙였다"],
+      [/재킷’이다$/, "재킷’ 등을 출시한다"],
+      [/콘텐츠다$/, "콘텐츠를 공개한다"],
+      [/프로그램이다$/, "방식으로 운영된다"],
+      [/서비스다$/, "기능으로 제공된다"],
       [/확대했다$/, "확장해 왔다"],
-      [/확장했다$/, "넓혔다"],
+      [/넓혔다$/, "넓혀 나가고 있다"],
       [/참가한다$/, "참여한다"],
-      [/예정이다$/, "구상이다"],
-      [/계획이다$/, "구상이다"],
-      [/방침이다$/, "구상이다"],
-      [/전망이다$/, "예정이다"],
-      [/프로그램이다$/, "방식이다"],
-      [/서비스다$/, "기능이다"],
-      [/진행된다$/, "마련된다"],
-      [/운영된다$/, "진행된다"],
-      [/도입된다$/, "운영된다"],
     ]);
 
     if (
-      v3 === normOrig ||
-      v3 === v1 ||
-      v3 === v2 ||
-      stripQuotes(v3) === stripQuotes(normOrig) ||
-      stripQuotes(v3) === stripQuotes(v1) ||
-      stripQuotes(v3) === stripQuotes(v2)
+      extractHangulAndNumbers(v3) === extractHangulAndNumbers(normOrig) ||
+      extractHangulAndNumbers(v3) === extractHangulAndNumbers(v1) ||
+      extractHangulAndNumbers(v3) === extractHangulAndNumbers(v2)
     ) {
-      v3 = replaceEndingOnce(v2, [
-        [/([가-힣]+)계획이다$/, "$1방침이다"],
-        [/([가-힣]+)방침이다$/, "$1구상이다"],
-        [/([가-힣]+)예정이다$/, "$1전망이다"],
+      v3 = replaceEndingOnce(v3Base, [
         [/([가-힣]+)한다$/, "$1해 나간다"],
         [/([가-힣]+)된다$/, "$1될 전망이다"],
-        [/([가-힣]+)했다$/, "$1하며 입지를 넓혔다"],
+        [/([가-힣]+)했다$/, "$1하며 경쟁력을 높였다"],
+        [/([가-힣]+)이다$/, "$1으로 준비됐다"],
       ]);
     }
 
@@ -763,16 +966,19 @@ function buildClientSentenceSuggestions(rawText, compName) {
       reason,
       alternatives: validAlternatives,
       selectedAltId: null,
+      engineVersion: "v26",
     });
   }
 
   // 1차 패스: 기사식광고 4대 기준 문서(업무 프로세스 1~4단계, 제한소재·체크사항, 네이버 운영평가, 하드룰·금지어) 정밀 검수
   paras.forEach((para, pIdx) => {
-    const sents = splitKoreanSentences(para).filter((s) => s.length >= 14);
+    const sents = splitKoreanSentences(para).filter((s) => s.length >= 12);
 
     sents.forEach((sent, sIdx) => {
       if (suggestions.length >= 12) return;
 
+      // 0) 보도자료 상단 요약 불릿('- ...', '▲ ...') -> 완결된 신문 문장으로 교열
+      const isTopBullet = pIdx <= 2 && isTopSummaryBulletLine(sent);
       // 1) FMT-01: 전화번호·URL 노출 금지
       const hasContactOrUrl =
         /https?:\/\/[^\s)]+|www\.[^\s)]+|\b(?:02|0\d{2}|15\d{2}|16\d{2}|18\d{2})-\d{3,4}-\d{4}\b/.test(
@@ -784,9 +990,9 @@ function buildClientSentenceSuggestions(rawText, compName) {
       const hasDetailedAddr = /[가-힣0-9]+(?:동|로|길|가)\s+\d+(?:-\d+)?\s*번지/.test(sent);
       // 4) 업무프로세스 4단계(오탈자·중복표현 검수): '약 2천7백여 명' 등 '약+~여' 중복 및 한글 숫자 혼용
       const hasRedundantNum = /약\s*[0-9천백십만억]+\s*여\s*(?:명|개|곳|건)|[0-9]+천\s*[0-9]+백/.test(sent);
-      // 5) 업무프로세스 3·4단계(FMT-07): 불필요한 영문 병기((Polo Ralph Lauren), (Ready For Anywhere) 등) 및 상대 시점('오늘(2일)')
+      // 5) 업무프로세스 3·4단계(FMT-07): 불필요한 영문·불어 병기((athe), (Isigny Sainte-Mère), (Polo Ralph Lauren) 등) 및 상대 시점('오늘(2일)')
       const hasRedundantEngOrRelativeDate =
-        /\([A-Za-z][A-Za-z0-9\s,&·+-]{4,}\)|오늘\(\d+일\)|금일\s/.test(sent);
+        stripLongForeignParens(sent) !== sent || /오늘\(\d+일\)|금일\s/.test(sent);
       // 6) 업무프로세스 4단계(문장부호·따옴표 오타): 짝이 안 맞는 따옴표(‘...'), 직선 큰따옴표("..."), 인용 연결 쉼표("며, ")
       const hasQuotePunctIssue =
         /‘[^’']+'|'[^’']+’|"[^"]+"|[”"]\s*(?:라며|며),\s*[“"]/.test(sent);
@@ -796,17 +1002,22 @@ function buildClientSentenceSuggestions(rawText, compName) {
         sIdx === 0 &&
         /적용\s*범위를\s*패션(?:부터|과)\s*뷰티(?:까지)?\s*12개\s*카테고리로\s*(?:넓혔다|확대했다)/.test(sent) &&
         /12개\s*카테고리로\s*확대/.test(firstParaText);
-      // 8) FMT-08 (업무프로세스 2단계 3 & banned-words.yaml): 최상급·단정 표현 및 금지어
+      // 8) 무생물 주어 + '~로 구성할 예정이다' 등 어색한 보도자료 주술 호응 오류
+      const hasAwkwardSubjectPredicate =
+        /(?:키트|패키지|에디션|세트|라인업|컬렉션|상품|제품|박스|구성품)(?:은|는)\s+[^.]*로\s+구성(?:할|될)\s+(?:예정|계획)이다/.test(
+          sent
+        );
+      // 9) FMT-08 (업무프로세스 2단계 3 & banned-words.yaml): 최상급·단정 표현 및 금지어
       const hasSuperlative =
-        /세계\s*최고|국내\s*최고|업계\s*최고|최고\s*권위|세계\s*최대|국내\s*최대|최대\s*규모|업계\s*1위|국내\s*1위|세계\s*1위|유일한|유일무이|국내\s*유일|세계\s*최초|국내\s*최초|업계\s*최초|청소년올림픽\s*최초|최초로\s+도입|최초의\s+올림픽|독보적|압도적|명실상부|혁신적인|혁신적|역사적인\s+이정표|완벽한|극대화|기적/.test(
+        /세계\s*최고|국내\s*최고|업계\s*최고|최고\s*권위|세계\s*최대|국내\s*최대|최대\s*규모|업계\s*1위|국내\s*1위|세계\s*1위|유일한|유일무이|국내\s*유일|세계\s*최초|국내\s*최초|업계\s*최초|청소년올림픽\s*최초|최초로\s+도입|최초의\s+올림픽|협업을\s+진행하는\s+것은\s+이번이\s+처음|독보적|압도적|명실상부|혁신적인|혁신적|역사적인\s+이정표|100년\s+전통의|완벽한|극대화|기적/.test(
           sent
         );
-      // 9) FMT-07 (업무프로세스 3단계 & banned-words.yaml): 홍보체 어미 및 전 업종 공통 홍보성·주관적 수식어
+      // 10) FMT-07 (업무프로세스 3단계 & banned-words.yaml): 홍보체 어미 및 전 업종 공통 홍보성·주관적 수식어
       const hasPromoTone =
-        /자랑합니다|자랑한다|선보입니다|제공합니다|진행합니다|많은\s*관심\s*부탁|절찬리에|화제를\s*모으고|했다고\s+밝혔다|영광의\s+순간을|특별한\s+순간을|기존\s+중계에서\s+보기\s+어려웠던\s+생생하고|특별한\s+사진을|유익한\s+세션|굳건히\s+이어오고|특별한\s+대회\s+경험을\s+누릴\s+수\s+있도록|선명하고\s+생동감\s+있는|선제적으로\s+분석|익숙한\s+표현의|더욱\s+정교하게|오히려\s+줄었다|높은\s+관심이\s+드러났다|고객\s+반응이\s+나타났다|아메리칸\s+클래식을\s+대표하는|장소에\s+구애받지\s+않는|브랜드\s+특유의|처음\s+선보이는|집중\s+소개하는|선발매된다|대대적인|획기적인|성공적으로|박차를\s+가|만전을\s+기|총력을\s+기울|호평을\s+받|각광을\s+받|눈길을\s+끈|기대를\s+모은/.test(
+        /자랑합니다|자랑한다|선보입니다|제공합니다|진행합니다|많은\s*관심\s*부탁|절찬리에|화제를\s*모으고|했다고\s+밝혔다|선보인다고\s+밝혔다|영광의\s+순간을|특별한\s+순간을|기존\s+중계에서\s+보기\s+어려웠던\s+생생하고|특별한\s+사진을|유익한\s+세션|굳건히\s+이어오고|특별한\s+대회\s+경험을\s+누릴\s+수\s+있도록|선명하고\s+생동감\s+있는|선제적으로\s+분석|익숙한\s+표현의|더욱\s+정교하게|오히려\s+줄었다|높은\s+관심이\s+드러났다|고객\s+반응이\s+나타났다|아메리칸\s+클래식을\s+대표하는|장소에\s+구애받지\s+않는|브랜드\s+특유의|처음\s+선보이는|집중\s+소개하는|선발매된다|영감을\s+받아|만나볼\s+수\s+있다|대대적인|획기적인|성공적으로|박차를\s+가|만전을\s+기|총력을\s+기울|호평을\s+받|각광을\s+받|눈길을\s+끈|기대를\s+모은/.test(
           sent
         );
-      // 10) 업무프로세스 3·4단계: 한 문장 내 과도한 품목·일정 나열(중점 '·' 3회 이상 또는 쉼표 3회 이상)
+      // 11) 업무프로세스 3·4단계: 한 문장 내 과도한 품목·일정 나열(중점 '·' 3회 이상 또는 쉼표 3회 이상)
       const middleDotCount = (sent.match(/·/g) || []).length;
       const commaCount = (sent.match(/,/g) || []).length;
       const hasHeavyEnumeration =
@@ -815,6 +1026,7 @@ function buildClientSentenceSuggestions(rawText, compName) {
         ((middleDotCount >= 3 && commaCount >= 2) || commaCount >= 4 || (sent.length >= 95 && commaCount >= 3));
 
       const isRuleTarget =
+        isTopBullet ||
         hasContactOrUrl ||
         hasPyeong ||
         hasDetailedAddr ||
@@ -822,6 +1034,7 @@ function buildClientSentenceSuggestions(rawText, compName) {
         hasRedundantEngOrRelativeDate ||
         hasQuotePunctIssue ||
         hasLeadRedundancy ||
+        hasAwkwardSubjectPredicate ||
         hasSuperlative ||
         hasPromoTone ||
         hasHeavyEnumeration;
@@ -829,7 +1042,7 @@ function buildClientSentenceSuggestions(rawText, compName) {
       if (!isRuleTarget) return;
 
       // 기준 문서에 따른 정확하고 자연스러운 3단계 교정문 생성
-      let base = sent
+      let base = stripLongForeignParens(sent)
         .replace(/‘([^’']+)'/g, "‘$1’")
         .replace(/'([^’']+)’/g, "‘$1’")
         .replace(/"([^"]+)"/g, "“$1”")
@@ -853,6 +1066,7 @@ function buildClientSentenceSuggestions(rawText, compName) {
         .replace(/오늘\((\d+일)\)부터/g, "$1부터")
         .replace(/오늘\((\d+일)\)/g, "$1")
         // FMT-08 최상급·단정 표현 및 금지어 완화
+        .replace(/100년\s+전통의\s+/g, "")
         .replace(/세계\s*최고의?/g, "우수한 수준의")
         .replace(/국내\s*최고의?/g, "국내 주요")
         .replace(/업계\s*최고의?/g, "업계 상위권")
@@ -914,7 +1128,7 @@ function buildClientSentenceSuggestions(rawText, compName) {
           /선수들의\s+소통을\s+돕고\s+특별한\s+대회\s+경험을\s+누릴\s+수\s+있도록\s+지속해서\s+지원하고\s+있다/g,
           "선수들의 소통과 대회 편의를 지속해서 지원하고 있다"
         )
-        // 일반 기업·패션·유통·플랫폼 보도자료 공통 홍보성 수식어 및 중복·나열 교정
+        // 일반 기업·패션·뷰티·유통·플랫폼 보도자료 공통 홍보성 수식어 및 중복·나열 교정
         .replace(/아메리칸\s+클래식을\s+대표하는\s+패션\s+및\s+라이프스타일\s+브랜드/g, "패션·라이프스타일 브랜드")
         .replace(/장소에\s+구애받지\s+않는\s+브랜드\s+특유의\s+라이프스타일을\s+보여준다/g, "브랜드 고유의 라이프스타일을 선보인다")
         .replace(/트렌드를\s+선제적으로\s+분석해\s+상품을\s+제안하는\s+서비스다/g, "트렌드를 실시간 분석해 연관 상품을 제안하는 기능이다")
@@ -947,6 +1161,8 @@ function buildClientSentenceSuggestions(rawText, compName) {
         .replace(/높은\s+관심이\s+드러났다/g, "이용자 수요가 집중된 것으로 나타났다")
         .replace(/더욱\s+정교하게\s+읽어내는/g, "세밀하게 반영한")
         .replace(/더욱\s+정교하게/g, "정밀하게")
+        .replace(/에서\s+영감을\s+받아/g, "에서 모티브를 얻어")
+        .replace(/만나볼\s+수\s+있다/g, "구매할 수 있다")
         .replace(/대대적인/g, "전면적인")
         .replace(/획기적인/g, "새로운")
         .replace(/성공적으로/g, "안정적으로")
@@ -962,12 +1178,17 @@ function buildClientSentenceSuggestions(rawText, compName) {
       }
 
       let reason = "기사식광고 문체·표기 기준 교정 (FMT-07)";
-      if (hasContactOrUrl) {
+      if (isTopBullet) {
+        reason = "업무프로세스 3단계 · 보도자료 상단 개조식 요약 불릿을 완결된 신문 문장으로 교열";
+      } else if (hasContactOrUrl) {
         reason = "FMT-01 (기사식광고 체크사항) · 전화번호·홈페이지 주소 직접 노출 금지";
       } else if (hasPyeong) {
         reason = "FMT-02 (기사식광고 체크사항) · 면적 단위는 '평' 대신 '㎡(평)'로 환산 표기";
       } else if (hasDetailedAddr) {
         reason = "FMT-03 (기사식광고 체크사항) · 상세 번지 주소 표기 제한 → 'OO동 일대' 완화";
+      } else if (hasAwkwardSubjectPredicate) {
+        reason =
+          "업무프로세스 3·4단계 (주술 호응 교열) · 무생물 주어('~키트는')에 어울리는 피동·상태형 서술어로 교정";
       } else if (hasRedundantNum && hasSuperlative) {
         reason =
           "업무프로세스 4단계·FMT-08 · 중복 표현('약'+'~여' → '2,700여 명') 교열 및 최상급('최초의·역사적인') 완화";
@@ -985,10 +1206,10 @@ function buildClientSentenceSuggestions(rawText, compName) {
           "FMT-08 / PRD 9.2 · 인용문 내 금지어('혁신적') 및 홍보성 과장 수식어 중립화";
       } else if (hasSuperlative) {
         reason =
-          "FMT-08 (업무프로세스 2단계 3) · 최상급·단정 표현('최초로·최고·최대') 배제 및 사실 중심 완화";
+          "FMT-08 (업무프로세스 2단계 3) · 최상급·과장 수식어 배제 및 객관적 팩트 문체로 완화";
       } else if (hasRedundantEngOrRelativeDate) {
         reason =
-          "FMT-07 (업무프로세스 3단계) · 불필요한 영문 병기 간소화 및 보도자료식 시점·서술어 정비";
+          "FMT-07 (업무프로세스 3단계) · 불필요한 영문·외래어 병기 간소화 및 보도자료식 서술어 정비";
       } else if (hasQuotePunctIssue && /[“"]/.test(base) && /말했다|밝혔다|전했다/.test(sent)) {
         reason =
           "업무프로세스 3·4단계 · 직선 따옴표(\"→“”)·연결 어미(\"며, \"→”라며 “) 교열 및 인용문 수식어 정돈";
@@ -1010,15 +1231,14 @@ function buildClientSentenceSuggestions(rawText, compName) {
     });
   });
 
-  // 2차 패스 (모든 보도자료 최소 교열 보장 패스):
-  // 노골적인 금지어가 적은 일반 보도자료라도 PR사업팀 데스크 기준(업무 프로세스 3·4단계)에 따라
-  // 리드문, 계획·전망 문장, 수치 서술 문장, 관계자 인용문 등 최소 6건을 반드시 교열 제안한다.
-  if (suggestions.length < 6) {
+  // 2차 패스 (보완 패스):
+  // 1차 패스에서 교열 제안이 5건 미만일 때만, 실제로 문장 구조·서술부를 2가지 이상 자연스럽게 개선할 수 있는 문장에 한해 추가 제안
+  if (suggestions.length < 5) {
     paras.forEach((para, pIdx) => {
-      const sents = splitKoreanSentences(para).filter((s) => s.length >= 16);
+      const sents = splitKoreanSentences(para).filter((s) => s.length >= 18);
 
       sents.forEach((sent, sIdx) => {
-        if (suggestions.length >= 8) return;
+        if (suggestions.length >= 7) return;
         const normOrig = sent.replace(/\s+/g, " ").trim();
         if (addedSentences.has(normOrig)) return;
 
@@ -1033,12 +1253,11 @@ function buildClientSentenceSuggestions(rawText, compName) {
           return;
         }
 
-        // 2) 일반 서술문 및 인용문 다듬기 대상
+        // 2) 실제로 서술 호흡이나 어투를 매경 스트레이트 문체로 다듬을 수 있는 문장만 선별
         if (
-          /(?:예정이다|계획이다|전망이다|수\s+있다|늘었다|높아졌다|이른다|드러났다|나타났다|말했다|밝혔다|보여준다|공개한다|전개한다|진행한다|운영한다|다룬다|소개한다|선발매된다|출시된다|콘텐츠다)\.$/.test(
+          /(?:예정이다|계획이다|전망이다|수\s+있다|늘었다|높아졌다|드러났다|나타났다|말했다|밝혔다|보여준다|공개한다|전개한다|진행한다|운영한다|다룬다|소개한다|선발매된다|출시된다|콘텐츠다|구현했다|증정한다)\.$/.test(
             normOrig
-          ) ||
-          normOrig.length >= 42
+          )
         ) {
           pushSuggestion(
             pIdx,
@@ -1377,28 +1596,31 @@ function safeParseLlmJson(rawText) {
   return Object.keys(recovered).length > 0 ? recovered : null;
 }
 
-// 어떤 보도자료가 입력되어도 본문 1~2문단의 핵심 키워드·따옴표 브랜드명·서술어를 추출해
+// 어떤 보도자료가 입력되어도 상단 요약 불릿과 본문 1~2문단의 핵심 키워드·따옴표 브랜드명·서술어를 추출해
 // 32~42자 내외의 실제 매경 기사 제목 후보 3종과 명사형 부제 2줄을 동적으로 생성
 function buildDynamicTitlesAndSubtitles(compName, rawText) {
   const c = extractCompanyNameFromRawText(rawText, compName);
   const paras = splitPressReleaseParagraphs(rawText);
-  const firstPara = paras[0] || "";
-  const secondPara = paras[1] || "";
+  const topBullets = paras.filter((p, idx) => idx <= 2 && isTopSummaryBulletLine(p));
+  const narrativeParas = paras.filter((p, idx) => !(idx <= 2 && isTopSummaryBulletLine(p)));
+  const firstPara = narrativeParas[0] || paras[0] || "";
+  const secondPara = narrativeParas[1] || paras[1] || "";
 
-  // 원문 내 따옴표('...' 또는 ‘...’)로 강조된 핵심 행사·브랜드·상품명 추출 (영문 병기 포함 최대 50자까지 매칭 후 괄호 제거)
+  // 원문 내 따옴표('...' 또는 ‘...’)로 강조된 핵심 행사·브랜드·상품명 추출 (영문·불어 병기 제거)
   const quotedMatches = Array.from(
-    (rawText || "").matchAll(/[‘'“"]([^’'”"\n]{2,50})[’'”"]/g)
+    stripLongForeignParens(rawText || "").matchAll(/[‘'“"]([^’'”"\n]{2,50})[’'”"]/g)
   )
-    .map((m) => m[1].replace(/\([A-Za-z0-9\s,&·+-]{3,}\)/g, "").trim())
-    .filter((q) => q.length >= 2 && q.length <= 22);
+    .map((m) => m[1].trim())
+    .filter((q) => q.length >= 2 && q.length <= 24);
   const primaryKey = quotedMatches[0] || "";
   const secondaryKey = quotedMatches.find((q) => q !== primaryKey) || "";
 
   // 1문단 핵심 서술 행위 추출
   let coreAction = "본격 추진";
-  if (/캠페인[^.]*(?:전개|진행)/.test(firstPara)) coreAction = "캠페인 동시 전개";
-  else if (/개최한다|연다/.test(firstPara)) coreAction = "개최";
-  else if (/출시한다|선보인다|공개한다|출시했다/.test(firstPara)) coreAction = "신규 출시·공개";
+  if (/협업해|콜라보|손잡고/.test(firstPara)) coreAction = "협업 에디션 출시";
+  else if (/캠페인[^.]*(?:전개|진행)/.test(firstPara)) coreAction = "캠페인 동시 전개";
+  else if (/개최한다|개최한다고|연다/.test(firstPara)) coreAction = "개최";
+  else if (/출시한다|선보인다|선보인다고|공개한다|출시했다/.test(firstPara)) coreAction = "신규 출시·공개";
   else if (/확대했다|넓혔다/.test(firstPara)) coreAction = "전면 확대";
   else if (/참여한다|후원한다/.test(firstPara)) coreAction = "공식 참여";
   else if (/체결했다|협약/.test(firstPara)) coreAction = "업무협약 체결";
@@ -1410,36 +1632,50 @@ function buildDynamicTitlesAndSubtitles(compName, rawText) {
       : `${c}, ‘${primaryKey}’ 맞춤형 콘텐츠·라인업 본격 운영`;
     const t3 = `${c}, ‘${primaryKey}’ ${coreAction}으로 차별화 경쟁력 강화`;
 
-    // 2문단·3문단에서 명사형 종결 부제목 2줄 생성 (문장 중간 절단 금지)
-    let sub1 = secondPara
-      ? secondPara
-          .split(/[.!?]/)[0]
-          .replace(/\([A-Za-z0-9\s,&·+-]{3,}\)/g, "")
-          .replace(/^(?:특히|또한|한편)\s+/, "")
-          .replace(
-            /이날\s+(?:오전|오후)\s+\d+시(?:\s*\d+분)?부터\s+(\d+일)\s+(?:오전|오후)\s+\d+시(?:\s*\d+분)?까지/g,
-            "오는 $1까지"
-          )
-          .replace(/이날\s+오전\s+\d+시(?:\s*\d+분)?부터\s*/g, "")
-          .replace(/오전\s+\d+시(?:\s*\d+분)?(?:부터|까지)?\s*/g, "")
-          .replace(/오후\s+\d+시(?:\s*\d+분)?(?:부터|까지)?\s*/g, "")
-          .replace(/(?:을|를)\s+선보인다$/, " 공개")
-          .replace(/(?:을|를)\s+진행한다$/, " 진행")
-          .replace(/(?:을|를)\s+운영한다$/, " 운영")
-          .replace(/(?:을|를)\s+공개한다$/, " 공개")
-          .replace(/구축됐다$/, "구축")
-          .replace(/(?:한다|된다|이다|있다|밝혔다|전했다)$/, "")
-          .replace(/\s+/g, " ")
-          .trim()
-      : "";
-    if (!sub1 || sub1.length > 38 || /(?:을|를|은|는|이|가|에|로|의)$/.test(sub1)) {
+    // 상단 요약 불릿이 있으면 이를 정돈하여 부제목 1줄로 우선 활용
+    let sub1 = "";
+    if (topBullets.length > 0) {
+      sub1 = stripLongForeignParens(topBullets[0])
+        .replace(/^(?:[-•▪▶▷▲■●◆※]|\d+\.)\s*/, "")
+        .replace(/(?:\.{2,}|…)/g, " · ")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+    if (!sub1 && secondPara) {
+      sub1 = stripLongForeignParens(secondPara)
+        .split(/[.!?]/)[0]
+        .replace(/^(?:특히|또한|한편)\s+/, "")
+        .replace(
+          /이날\s+(?:오전|오후)\s+\d+시(?:\s*\d+분)?부터\s+(\d+일)\s+(?:오전|오후)\s+\d+시(?:\s*\d+분)?까지/g,
+          "오는 $1까지"
+        )
+        .replace(/이날\s+오전\s+\d+시(?:\s*\d+분)?부터\s*/g, "")
+        .replace(/오전\s+\d+시(?:\s*\d+분)?(?:부터|까지)?\s*/g, "")
+        .replace(/오후\s+\d+시(?:\s*\d+분)?(?:부터|까지)?\s*/g, "")
+        .replace(/(?:을|를)\s+선보인다$/, " 공개")
+        .replace(/(?:을|를)\s+진행한다$/, " 진행")
+        .replace(/(?:을|를)\s+운영한다$/, " 운영")
+        .replace(/(?:을|를)\s+공개한다$/, " 공개")
+        .replace(/(?:을|를)\s+구현했다$/, " 구현")
+        .replace(/구축됐다$/, "구축")
+        .replace(/(?:한다|된다|이다|있다|밝혔다|전했다)$/, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    }
+    if (!sub1 || sub1.length > 42 || /(?:을|를|은|는|이|가|에|로|의)$/.test(sub1)) {
       sub1 = secondaryKey
         ? `‘${primaryKey}’·‘${secondaryKey}’ 중심 주요 라인업 및 콘텐츠 구성`
         : `‘${primaryKey}’ 중심 주요 프로그램 및 단독 라인업 구성`;
     }
-    const sub2 = secondaryKey
-      ? `‘${secondaryKey}’ 등 주요 연계 프로그램·채널 순차 운영`
-      : `${c} 맞춤형 큐레이션 및 온·오프라인 연계 혜택 강화`;
+    const sub2 =
+      topBullets.length > 1
+        ? stripLongForeignParens(topBullets[1])
+            .replace(/^(?:[-•▪▶▷▲■●◆※]|\d+\.)\s*/, "")
+            .replace(/(?:\.{2,}|…)/g, " · ")
+            .trim()
+        : secondaryKey
+        ? `‘${secondaryKey}’ 등 주요 연계 라인업·채널 순차 운영`
+        : `${c} 맞춤형 큐레이션 및 온·오프라인 연계 프로모션 강화`;
 
     return {
       titles: [t1, t2, t3],
@@ -1448,9 +1684,8 @@ function buildDynamicTitlesAndSubtitles(compName, rawText) {
   }
 
   // 따옴표 키워드가 없는 일반 보도자료의 경우 1문단 첫 문장을 요약해 제목 생성
-  const leadClean = firstPara
+  const leadClean = stripLongForeignParens(firstPara)
     .split(/[.!?]/)[0]
-    .replace(/\([A-Za-z0-9\s,&·+-]{4,}\)/g, "")
     .replace(/오늘\(\d+일\)부터\s*/g, "")
     .replace(/오는\s+\d+월\s+\d+일(?:부터)?\s*/g, "")
     .replace(/(?:하고\s+밝혔다|다고\s+밝혔다|한다|된다|했다)$/, "")
@@ -1468,6 +1703,136 @@ function buildDynamicTitlesAndSubtitles(compName, rawText) {
       "이용자 편의성 및 채널 접점 결합한 맞춤형 전략 추진",
     ],
   };
+}
+
+// 모드 2(구조 리라이팅) & 모드 3(비교·기획)에서 어떤 보도자료가 입력되어도
+// 문단 순서만 바꾸는 것이 아니라 각 문장의 단어·수식어·어미를 매경 기사체로 실질적으로 개고(Paraphrase)하는 범용 리라이터
+function rewriteSentenceForMode2Client(sent, isLeadSent, sentenceSuggestions) {
+  const trimmed = (sent || "").replace(/\s+/g, " ").trim();
+  if (!trimmed) return "";
+
+  // 0) 상단 요약 불릿인 경우 완결된 신문 문장으로 즉시 전환
+  if (isTopSummaryBulletLine(trimmed)) {
+    const conv = convertSummaryBulletToNewspaperSentences(trimmed, "");
+    if (conv && conv.v1) return conv.v1;
+  }
+
+  // 1) 이미 정밀 교열 엔진(sentenceSuggestions)에서 생성된 매경 스트레이트 기사체(v2 또는 v1)가 있으면 우선 적용하되 추가 어휘 다듬기 수행
+  const matchedSug = (sentenceSuggestions || []).find((sug) =>
+    isSameSentenceResilient(trimmed, sug.originalSentence)
+  );
+  let s =
+    matchedSug && Array.isArray(matchedSug.alternatives) && matchedSug.alternatives.length > 0
+      ? (matchedSug.alternatives[1]?.text || matchedSug.alternatives[0]?.text || trimmed)
+      : trimmed;
+
+  // 2) 전 업종 공통 보도자료 문장·단어·어미 매경 스트레이트 개고
+  s = stripLongForeignParens(s)
+    .replace(/‘([^’']+)'/g, "‘$1’")
+    .replace(/'([^’']+)’/g, "‘$1’")
+    .replace(/"([^"]+)"/g, "“$1”")
+    .replace(/'([^']+)'/g, "‘$1’")
+    .replace(/”며,\s*“/g, "”라며 “")
+    .replace(/”라며,\s*“/g, "”라며 “")
+    .replace(/100년\s+전통의\s+/g, "")
+    .replace(/오늘\((\d+일)\)부터/g, "$1일부터")
+    .replace(/오늘\((\d+일)\)/g, "$1일")
+    .replace(/국제올림픽위원회\(IOC\)의/g, "국제올림픽위원회(IOC)")
+    .replace(/아메리칸\s+클래식을\s+대표하는\s+패션\s+및\s+라이프스타일\s+브랜드/g, "패션·라이프스타일 브랜드")
+    .replace(/장소에\s+구애받지\s+않는\s+브랜드\s+특유의\s+라이프스타일을\s+보여준다\.?/g, "브랜드 고유의 라이프스타일 화보를 선보인다.")
+    .replace(/세계\s*최초로?/g, "독자 기술로")
+    .replace(/국내\s*최초로?/g, "자체 기술로")
+    .replace(/업계\s*최초로?/g, "선도적으로")
+    .replace(/최초로\s+도입된다/g, "처음 도입된다")
+    .replace(/협업해\s+한정판\s+([‘'“"][^’'”"]+[’'”"])(?:을|를)\s+선보인다고\s+밝혔다\.?/g, "손잡고 한정판 $1을 출시한다고 밝혔다.")
+    .replace(/협업해\s+(.+?)(?:을|를)\s+선보인다고\s+밝혔다\.?/g, "손잡고 $1을 출시한다.")
+    .replace(/선보인다고\s+밝혔다\.?/g, "출시한다고 밝혔다.")
+    .replace(/개최한다고\s+밝혔다\.?/g, "연다고 밝혔다.")
+    .replace(/진행한다고\s+밝혔다\.?/g, "운영한다고 밝혔다.")
+    .replace(/([가-힣A-Za-z0-9\s‘’'"]+?)가\s+(.+?)와\s+협업을\s+진행하는\s+것은\s+이번이\s+처음이다\.?/g, "$1가 $2와 공식 협업에 나선 것은 이번이 처음이다.")
+    .replace(/대표\s+제품인\s+([가-힣A-Za-z0-9\s]+)에서\s+영감을\s+받아/g, "주력 제품인 $1를 모티브로 삼아")
+    .replace(/에서\s+영감을\s+받아/g, "에서 모티브를 얻어")
+    .replace(/따뜻한\s+색감과\s+윤기를\s+더해\s+([‘'“"][^’'”"]+[’'”"])(?:을|를)\s+구현했다\.?/g, "특유의 색감과 보습 윤기를 결합해 $1 제형을 완성했다.")
+    .replace(/구현했다\.?/g, "완성했다.")
+    .replace(/^컬러는\s+/g, "색상 라인업은 ")
+    .replace(/녹은\s+버터처럼\s+투명한/g, "투명한 제형의")
+    .replace(/투명하게\s+발렸다가\s+자연스러운\s+핑크로\s+바뀌는/g, "발색 후 자연스러운 핑크빛으로 변하는")
+    .replace(/살짝\s+녹은\s+버터의\s+노릇함을\s+담은/g, "노릇한 버터 색감을 살린")
+    .replace(
+      /^([가-힣A-Za-z0-9\s‘’'"]+?(?:키트|패키지|에디션|세트|라인업|컬렉션|상품|제품|박스|구성품))(?:은|는)\s+(.+?)로\s+구성(?:할|될)\s+(?:예정|계획)이다\.?$/,
+      "$1에는 $2 등이 포함된다."
+    )
+    .replace(/로\s+구성할\s+예정이다\.?/g, "로 구성됐다.")
+    .replace(/로\s+구성될\s+예정이다\.?/g, "로 구성된다.")
+    .replace(/활용해\s+/g, "기반으로 ")
+    .replace(/영광의\s+순간을\s+/g, "")
+    .replace(/생생하고\s+현장감\s+넘치는\s+화면을/g, "현장감 있는 중계 화면을")
+    .replace(/선명하고\s+생동감\s+있는\s+/g, "실감형 ")
+    .replace(/대회\s+기간\s+중\s+/g, "대회 기간 ")
+    .replace(/각국\s+대표팀과\s+교류하며/g, "각국 대표팀과 소통하며")
+    .replace(/^또한\s+/g, "아울러 ")
+    .replace(/^특히\s+/g, "")
+    .replace(/다양한\s+활동을\s+선보일\s+계획이다\.?/g, "현장 체험·지원 프로그램을 운영한다.")
+    .replace(/선보일\s+(?:계획|예정)이다\.?/g, "선보인다.")
+    .replace(/진행할\s+(?:계획|예정)이다\.?/g, "진행한다.")
+    .replace(/운영할\s+(?:계획|예정)이다\.?/g, "운영한다.")
+    .replace(/출시할\s+(?:계획|예정)이다\.?/g, "출시한다.")
+    .replace(/전달할\s+예정이다\.?/g, "송출한다.")
+    .replace(/추억을\s+이어줄\s+예정이다\.?/g, "추억을 연결한다.")
+    .replace(/공간인\s+([‘'“"][^’'”"]+[’'”"])도\s+선수촌\s+내에\s+마련할\s+계획이다\.?/g, "$1을 선수촌 내에 운영한다.")
+    .replace(/마련할\s+계획이다\.?/g, "운영한다.")
+    .replace(/등이\s+운영된다\.?/g, "등이 마련된다.")
+    .replace(/특별한\s+사진을\s+제작할\s+수\s+있다\.?/g, "맞춤형 기념 사진을 제작하도록 지원한다.")
+    .replace(/유익한\s+세션들이\s+진행된다\.?/g, "체험 세션이 함께 운영된다.")
+    .replace(/도\s+진행한다\.?/g, "도 운영한다.")
+    .replace(/역사적인\s+이정표가\s+될\s+전망이다\.?/g, "의미 있는 이정표가 될 것으로 기대된다.")
+    .replace(/굳건히\s+이어오고\s+있으며/g, "이어오고 있으며")
+    .replace(/지속해서\s+지원하고\s+있다\.?/g, "지속 지원하고 있다.")
+    .replace(/특별한\s+순간을\s+기념할\s+수\s+있다\.?/g, "순간을 기념하도록 구성됐다.")
+    .replace(/기념할\s+수\s+있다\.?/g, "기념하도록 구성됐다.")
+    .replace(/폭넓게\s+활용할\s+수\s+있다\.?/g, "두루 활용하도록 구성했다.")
+    .replace(/활용할\s+수\s+있다\.?/g, "활용하도록 구성했다.")
+    .replace(/제공할\s+수\s+있도록\s+기획한\s+제품이다\.?/g, "제공하기 위해 개발된 시스템이다.")
+    .replace(/구현하도록\s+설계됐다\.?/g, "구현했다.")
+    .replace(/설계됐다\.?/g, "구성됐다.")
+    .replace(/설계했다\.?/g, "구성했다.")
+    .replace(/간소화했다\.?/g, "단축했다.")
+    .replace(/개발\s+및\s+생산해\s+왔다\.?/g, "개발·공급해 왔다.")
+    .replace(/를\s+증정한다\.?/g, "를 구매 사은품으로 제공한다.")
+    .replace(/을\s+증정한다\.?/g, "을 구매 사은품으로 제공한다.")
+    .replace(/에서\s+만나볼\s+수\s+있다\.?/g, "등 주요 채널에서 구매할 수 있다.")
+    .replace(/만나볼\s+수\s+있다\.?/g, "구매할 수 있다.")
+    .replace(/보여준다\.?/g, "선보인다.")
+    .replace(/선발매된다\.?/g, "우선 출시된다.")
+    .replace(/다룬다\.?/g, "집중 소개한다.")
+    .replace(/콘텐츠다\.?/g, "콘텐츠로 구성됐다.")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (isLeadSent) {
+    const m = /^([가-힣A-Za-z0-9㈜()\s]+?(?:은|는|이|가))\s+(\d{1,2}월\s*\d{1,2}일부터\s*[^‘'“"]+에서\s*열리는\s*[‘'“"][^’'”"]+[’'”"]에)\s+(.+)$/.exec(
+      s.replace(/\.$/, "")
+    );
+    if (m) {
+      s = `${m[2]} ${m[1]} ${m[3].replace(/참여한다$/, "참여해 공식 무선 통신·기술 지원에 나선다")}.`;
+    }
+  }
+
+  // 만약 여전히 원문 문장과 한글이 100% 동일하다면 서술 어미를 매경 기사체로 다듬어 모든 문단이 실제로 리라이팅되도록 보장
+  if (extractHangulAndNumbers(s) === extractHangulAndNumbers(trimmed) && !/[“”]/.test(s)) {
+    s = s
+      .replace(/선보인다\.$/, "새롭게 출시한다.")
+      .replace(/진행한다\.$/, "본격 운영한다.")
+      .replace(/운영한다\.$/, "마련해 선보인다.")
+      .replace(/공개한다\.$/, "공식 선보인다.")
+      .replace(/밝혔다\.$/, "설명했다.")
+      .replace(/전했다\.$/, "설명했다.")
+      .replace(/말했다\.$/, "전했다.")
+      .replace(/예정이다\.$/, "방침이다.")
+      .replace(/계획이다\.$/, "방침이다.");
+  }
+
+  return s.endsWith(".") ? s : `${s}.`;
 }
 
 function buildClientFallbackDraft(compName, mode, rawText) {
@@ -1493,7 +1858,7 @@ function buildClientFallbackDraft(compName, mode, rawText) {
     /AI\s*트렌드\s*큐레이션|얼굴\s*소멸\s*모자/.test(sanitized);
   const isFashionOrRetail =
     !isMusinsaCuration &&
-    /패션|라이프스타일|의류|아우터|컬렉션|뷰티|화보|단독\s*상품|라이브\s*커머스|29CM|무신사|폴로\s*랄프\s*로렌/.test(
+    /패션|라이프스타일|의류|아우터|컬렉션|뷰티|화보|단독\s*상품|라이브\s*커머스|29CM|무신사|폴로\s*랄프\s*로렌|아떼|LF/.test(
       sanitized
     );
   const isUniversityOrForum = /대학교|대학|산학|포럼|연구|장학/.test(sanitized);
@@ -1546,78 +1911,60 @@ function buildClientFallbackDraft(compName, mode, rawText) {
     };
   }
 
-  // 모드 2(전면 리라이팅) & 모드 3(비교·기획): 모든 문단의 어미·영문 병기·부사어를 매경 기사체로 재구성하고 중간 문단을 재배치
-  let bodyParas = (sanitizedParas.length > 0 ? [...sanitizedParas] : [sanitized]).map((p, idx) => {
-    let rw = p
-      .replace(/\(([A-Za-z][A-Za-z0-9\s,&·+-]{3,})\)/g, (full, inner) =>
-        /^[A-Z0-9&/+]{2,5}$/.test(inner.trim()) ? full : ""
-      )
-      .replace(/오늘\((\d+일)\)부터/g, "$1일부터")
-      .replace(/오늘\((\d+일)\)/g, "$1일")
-      .replace(/국제올림픽위원회\(IOC\)의/g, "국제올림픽위원회(IOC)")
-      .replace(/아메리칸\s+클래식을\s+대표하는\s+패션\s+및\s+라이프스타일\s+브랜드/g, "패션·라이프스타일 브랜드")
-      .replace(/장소에\s+구애받지\s+않는\s+브랜드\s+특유의\s+라이프스타일을\s+보여준다\./g, "브랜드 고유의 라이프스타일 화보를 선보인다.")
-      .replace(/세계\s*최초로?/g, "독자 기술로")
-      .replace(/국내\s*최초로?/g, "자체 기술로")
-      .replace(/업계\s*최초로?/g, "선도적으로")
-      .replace(/최초로\s+도입된다/g, "처음 도입된다")
-      .replace(/활용해\s+/g, "기반으로 ")
-      .replace(/영광의\s+순간을\s+/g, "")
-      .replace(/생생하고\s+현장감\s+넘치는\s+화면을/g, "현장감 있는 중계 화면을")
-      .replace(/선명하고\s+생동감\s+있는\s+/g, "실감형 ")
-      .replace(/대회\s+기간\s+중\s+/g, "대회 기간 ")
-      .replace(/각국\s+대표팀과\s+교류하며/g, "각국 대표팀과 소통하며")
-      .replace(/^또한\s+/g, "아울러 ")
-      .replace(/다양한\s+활동을\s+선보일\s+계획이다\./g, "현장 체험·지원 프로그램을 운영한다.")
-      .replace(/선보일\s+계획이다\./g, "선보인다.")
-      .replace(/전달할\s+예정이다\./g, "송출한다.")
-      .replace(/추억을\s+이어줄\s+예정이다\./g, "추억을 연결한다.")
-      .replace(/공간인\s+([‘'“"][^’'”"]+[’'”"])도\s+선수촌\s+내에\s+마련할\s+계획이다\./g, "$1을 선수촌 내에 운영한다.")
-      .replace(/마련할\s+계획이다\./g, "운영한다.")
-      .replace(/등이\s+운영된다\./g, "등이 마련된다.")
-      .replace(/특별한\s+사진을\s+제작할\s+수\s+있다\./g, "맞춤형 기념 사진을 제작하도록 지원한다.")
-      .replace(/유익한\s+세션들이\s+진행된다\./g, "체험 세션이 함께 운영된다.")
-      .replace(/도\s+진행한다\./g, "도 운영한다.")
-      .replace(/역사적인\s+이정표가\s+될\s+전망이다\./g, "의미 있는 이정표가 될 것으로 기대된다.")
-      .replace(/굳건히\s+이어오고\s+있으며/g, "이어오고 있으며")
-      .replace(/지속해서\s+지원하고\s+있다\./g, "지속 지원하고 있다.")
-      .replace(/특별한\s+순간을\s+기념할\s+수\s+있다\./g, "순간을 기념하도록 구성됐다.")
-      .replace(/기념할\s+수\s+있다\./g, "기념하도록 구성됐다.")
-      .replace(/폭넓게\s+활용할\s+수\s+있다\./g, "두루 활용하도록 구성했다.")
-      .replace(/활용할\s+수\s+있다\./g, "활용하도록 구성했다.")
-      .replace(/제공할\s+수\s+있도록\s+기획한\s+제품이다\./g, "제공하기 위해 개발된 시스템이다.")
-      .replace(/구현하도록\s+설계됐다\./g, "구현했다.")
-      .replace(/설계됐다\./g, "구성됐다.")
-      .replace(/설계했다\./g, "구성했다.")
-      .replace(/간소화했다\./g, "단축했다.")
-      .replace(/개발\s+및\s+생산해\s+왔다\./g, "개발·공급해 왔다.")
-      .replace(/보여준다\./g, "선보인다.")
-      .replace(/선발매된다\./g, "우선 출시된다.")
-      .replace(/다룬다\./g, "집중 소개한다.")
-      .replace(/콘텐츠다\./g, "콘텐츠로 구성됐다.")
-      .replace(/계획이다\./g, "방침이다.")
-      .replace(/예정이다\./g, "전망이다.")
-      .replace(/\s+/g, " ")
-      .trim();
-    if (idx === 0) {
-      const m = /^([가-힣A-Za-z0-9㈜()\s]+?(?:은|는|이|가))\s+(\d{1,2}월\s*\d{1,2}일부터\s*[^‘'“"]+에서\s*열리는\s*[‘'“"][^’'”"]+[’'”"]에)\s+(.+)$/.exec(
-        rw.replace(/\.$/, "")
-      );
-      if (m) {
-        rw = `${m[2]} ${m[1]} ${m[3].replace(/참여한다$/, "참여해 공식 무선 통신·기술 지원에 나선다")}.`;
-      }
-    }
-    return rw;
+  // 모드 2(구조 리라이팅) & 모드 3(비교·기획):
+  // 1) 상단 개조식 요약 불릿('- ...')은 리드문을 밀어내지 않도록 분리해 완결된 배경 문장으로 변환 후 본문 중간에 결합
+  // 2) 모든 문단의 문장·단어·수식어·어미를 매경 기사체로 개고(Paraphrase)
+  // 3) 1문단 리드문과 마지막 인용문 위치는 지키면서 중간 문단 순서를 재배치
+  const topBulletParas = sanitizedParas.filter((p, idx) => idx <= 2 && isTopSummaryBulletLine(p));
+  const narrativeSourceParas = sanitizedParas.filter(
+    (p, idx) => !(idx <= 2 && isTopSummaryBulletLine(p))
+  );
+  const effectiveSourceParas =
+    narrativeSourceParas.length > 0 ? narrativeSourceParas : sanitizedParas;
+
+  let bodyParas = effectiveSourceParas.map((para, pIdx) => {
+    const sents = splitKoreanSentences(para);
+    const rewrittenSents = sents.map((sent, sIdx) =>
+      rewriteSentenceForMode2Client(sent, pIdx === 0 && sIdx === 0, sentenceSuggestions)
+    );
+    return rewrittenSents.join(" ");
   });
+
+  // 상단 요약 불릿이 있었던 경우 완결된 문장으로 변환하여 2번째 문단(또는 마지막 전 문단)에 자연스럽게 결합
+  if (topBulletParas.length > 0) {
+    const bulletSents = topBulletParas
+      .map((b) => convertSummaryBulletToNewspaperSentences(b, realCompName)?.v1)
+      .filter(Boolean);
+    if (bulletSents.length > 0) {
+      const insertIdx = Math.min(1, Math.max(0, bodyParas.length - 1));
+      bodyParas[insertIdx] = `${bodyParas[insertIdx]} ${bulletSents.join(" ")}`.trim();
+    }
+  }
+
+  // 중간 문단 구조 재배치 (1문단 리드문 고정, 마지막 단락이 관계자 인용문이면 마지막에 유지하고 중간 단락만 교차 배치)
   if (bodyParas.length >= 3) {
-    const tmp = bodyParas[1];
-    bodyParas[1] = bodyParas[2];
-    bodyParas[2] = tmp;
+    const lastIdx = bodyParas.length - 1;
+    const lastHasQuote = /[“”]/.test(bodyParas[lastIdx]) && /(?:관계자|대표|부사장|센터장|원장|총장|군수)/.test(bodyParas[lastIdx]);
+    if (bodyParas.length === 3 && lastHasQuote) {
+      // 3문단이고 3번째가 인용문이면 2문단 내부 문장 순서를 역전하여 구조 차별화
+      const midSents = splitKoreanSentences(bodyParas[1]);
+      if (midSents.length >= 2) {
+        bodyParas[1] = [...midSents.slice(1), midSents[0]].join(" ");
+      }
+    } else {
+      const tmp = bodyParas[1];
+      bodyParas[1] = bodyParas[2];
+      bodyParas[2] = tmp;
+    }
   }
   if (bodyParas.length >= 5) {
-    const tmp2 = bodyParas[3];
-    bodyParas[3] = bodyParas[4];
-    bodyParas[4] = tmp2;
+    const lastIdx = bodyParas.length - 1;
+    const swapTarget = lastIdx === 4 && /[“”]/.test(bodyParas[4]) ? 3 : 4;
+    if (swapTarget === 4) {
+      const tmp2 = bodyParas[3];
+      bodyParas[3] = bodyParas[4];
+      bodyParas[4] = tmp2;
+    }
   }
 
   let competitors = [];
@@ -2833,8 +3180,13 @@ function NewJobView({ onBack, onOpenGuide, onCreated }) {
 
     try {
       const compName = extractCompanyNameFromRawText(rawText, companyName);
+      const activeModelObj =
+        AVAILABLE_AI_MODELS.find((m) => m.id === getSelectedAiModel()) ||
+        AVAILABLE_AI_MODELS[0];
 
-      setStepLabel("S1~S2 기업·홈페이지 및 기출고 웹 검색 중 (openai/gpt-5.6-sol)...");
+      setStepLabel(
+        `S1~S2 기업·홈페이지 및 기출고 웹 검색 중 (${activeModelObj.shortName})...`
+      );
       let webSources = [];
       try {
         const sRes = await callPerplexityResponsesApi({
@@ -2847,10 +3199,10 @@ function NewJobView({ onBack, onOpenGuide, onCreated }) {
 
       setStepLabel(
         mode === "comparative"
-          ? "S6 동종업계 경쟁사 3곳 비교·기획 조사 및 기사 초안 작성 중..."
+          ? `S6 동종업계 경쟁사 3곳 비교·기획 조사 및 기사 초안 작성 중 (${activeModelObj.shortName})...`
           : mode === "minimal"
-          ? "S6 원문 최소 수정 문장별 교정 제안 및 취재 팩트 메모장 구성 중..."
-          : "S6 매경 스타일 리라이팅 초안 및 제목 후보 3종 작성 중..."
+          ? `S6 원문 최소 수정 문장별 교정 제안 및 취재 팩트 메모장 구성 중 (${activeModelObj.shortName})...`
+          : `S6 매경 스타일 리라이팅 초안 및 제목 후보 3종 작성 중 (${activeModelObj.shortName})...`
       );
 
       const fallbackDraft = buildClientFallbackDraft(compName, mode, rawText);
@@ -2866,11 +3218,11 @@ function NewJobView({ onBack, onOpenGuide, onCreated }) {
           "당신은 매일경제신문 편집국의 20년차 수석 교열·편집데스크 기자입니다.",
           "현재 모드는 [모드 1: 기본 교정 · 최소 수정]입니다.",
           "절대 원칙:",
-          "1. 원문 문장의 원래 의미와 길이를 그대로 유지하면서 어색한 번역투·과장 표현·중복 영문 병기만 최소한으로 간결하게 다듬으십시오.",
-          "2. 원문에 없는 상투적 수식어('글로벌 현장 기술 지원에 본격 추진하며', '시장 공략에 속도를 낸다', '업계의 이목이 집중된다' 등)를 절대 덧붙이지 마십시오. 문장이 원문보다 길어지면 안 됩니다.",
-          "3. 한 문장 안에 '~며, ~며' 또는 '~고, ~고' 같은 동일 연결어미가 중복되지 않도록 간결한 단문/복문으로 교정하십시오.",
-          "4. IOC, AI, ESG, B2B 등 필수 약어는 유지하고, 불필요하게 긴 영문 전체 병기만 정리하십시오.",
-          "5. 각 대상 문장마다 서로 다른 3가지 간결한 교정 버전(v1: 최소 다듬기·교열, v2: 간결한 스트레이트 어순, v3: 담백한 경제지 문체)과 32~42자 내외의 매경 스타일 제목 후보 3개(titleCandidates), 명사형 부제목 2줄(subtitleLines)을 JSON으로만 응답하십시오.",
+          "1. 원문 문장의 원래 의미와 길이를 유지하면서 홍보성 수식어·어색한 비문·번역투·불필요한 영문 병기를 자연스러운 한국어 경제지 문체로 교정하십시오.",
+          "2. 서술어 어미 한 단어만 바꾸는 무의미한 치환('구성할 예정이다'→'구성할 계획이다', '말했다'→'전했다')은 절대 금지합니다.",
+          "3. 무생물 주어 호응 오류('시딩 키트는 ~ 구성할 예정이다')는 반드시 수동·상태형('시딩 키트는 ~으로 구성됐다', '시딩 키트에는 ~이 포함된다', '~을 담은 시딩 키트도 함께 선보인다')으로 자연스럽게 바로잡으십시오.",
+          "4. 원문 상단의 개조식 요약 불릿('- 립 글로이밤 3분기 매출 350% 급증...')은 완전한 평서형 기사 문장('~ 3분기 매출이 350% 증가하며 대표 상품으로 자리 잡았다.')으로 전환하십시오.",
+          "5. 각 대상 문장마다 어순·서술 구조가 확실히 구별되는 3가지 교정 버전(v1: 매경 기사식광고 표준 교정, v2: 간결한 스트레이트 단문·구문 전환, v3: 담백한 경제지 서술체)과 매경 스타일 제목 후보 3개(titleCandidates), 명사형 부제목 2줄(subtitleLines)을 JSON으로만 응답하십시오.",
           '응답 JSON 형식: {"titleCandidates":["...","...","..."],"subtitleLines":["...","..."],"edits":[{"index":1,"reason":"간결한 교열 사유","v1":"...","v2":"...","v3":"..."}]}',
         ].join("\n");
 
@@ -2905,6 +3257,8 @@ function NewJobView({ onBack, onOpenGuide, onCreated }) {
               if (distinctAlts.length === 0) return item;
               return {
                 ...item,
+                engineVersion: "v26",
+                aiGenerated: true,
                 selectedAltId: null,
                 reason: found.reason || item.reason,
                 alternatives: distinctAlts,
@@ -2928,7 +3282,14 @@ function NewJobView({ onBack, onOpenGuide, onCreated }) {
                 "(4) 문단별로 체계적으로 구성된 7~8문단 분량(1,250~1,480자, 공백 포함 1,500자 이하 엄수)의 비교·기획 기사 본문(body, 문단 간 \\n\\n 구분).",
                 "★ 타 브랜드·경쟁사 단락 분리 필수 규칙: 본문 후반부에 타 브랜드·경쟁사 동향을 서술할 때 여러 경쟁사를 한 문단에 묶어서 작성하지 말고, 반드시 각 타 브랜드·경쟁사(3곳)마다 독립된 별도 단락(\\n\\n)으로 나누어 작성하십시오. 이어서 마지막 단락에는 경쟁 구도 속에서 대상 기업이 갖는 차별화 전략과 의의를 별도 단락으로 작성하십시오.",
               ].join("\n")
-            : "입력된 보도자료를 바탕으로 (1) 32~42자 내외의 매경 스타일 제목 후보 3개(titleCandidates), (2) 명사형 부제목 2줄(subtitleLines), (3) 문단별로 잘 구성된 4~5문단 분량(1,250~1,450자)의 기사 본문(body, 문단 간 \\n\\n 구분, 첫 문단 리드문 고정 및 중간 문단 재배치)을 JSON으로 작성하십시오.",
+            : [
+                "현재 모드는 [모드 2: 구조 리라이팅 기사]입니다.",
+                "구조 리라이팅 핵심 원칙:",
+                "1. 원문 상단에 개조식 요약 불릿('- 립 글로이밤 3분기 매출 350% 급증...')이 있는 경우 이를 본문 첫 문단(리드문) 자리에 그대로 두지 말고, 부제목(subtitleLines)과 본문 중간 단락의 완성형 문장으로 녹여내십시오.",
+                "2. 본문 제1문단(리드문)은 반드시 기업명과 핵심 출시·발표 팩트가 담긴 리드 문단으로 시작하고, 마지막 문단은 관계자 인용문으로 배치하며, 중간 문단(2↔3단락 등)의 전개 순서를 재배치하십시오.",
+                "3. ★ 가장 중요: 문단 순서만 바꾸고 원문 문장을 그대로 복사하는 것을 절대 금지합니다. 모든 문단의 문장 어휘, 수식어, 연결 구조, 서술 어미를 매일경제신문 스트레이트 기사체('~선보인다', '~구현한 것이 특징이다', '~구성됐다', '~진행된다')로 전면 리라이팅하고, 불필요한 영문 병기('(athe)', '(Isigny Sainte-Mère)' 등)를 제거하십시오.",
+                "4. 입력된 보도자료를 바탕으로 (1) 32~42자 내외의 매경 스타일 제목 후보 3개(titleCandidates), (2) 명사형 부제목 2줄(subtitleLines), (3) 문단별로 전면 리라이팅된 기사 본문(body, 문단 간 \\n\\n 구분)을 JSON으로 작성하십시오.",
+              ].join("\n"),
           "엄격 규칙: 마크다운(**, ###)이나 인라인 출처번호([1]) 금지, 동일 서술 어미('~밝혔다') 3회 이상 반복 금지('~설명했다', '~전했다', '~강조했다'로 분산). 한 문장 내 '~며, ~며' 중복 연결어미 금지. JSON 문자열 내부의 인용문은 반드시 둥근 따옴표(‘...’, “...”)만 사용하여 JSON 구문 오류를 방지하십시오.",
           '반드시 다음 JSON 구조로만 응답하십시오: {"titleCandidates":["...","...","..."],"subtitleLines":["...","..."],"body":"...","competitors":[{"name":"...","summary":"..."}],"diffs":[{"original":"...","replacement":"...","reason":"..."}]}',
         ].join("\n");
@@ -3350,8 +3711,37 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
           const prevMatch = savedSugs.find((s) =>
             isSameSentenceResilient(s.originalSentence, freshItem.originalSentence)
           );
-          if (!prevMatch || !prevMatch.selectedAltId) {
+          if (!prevMatch) {
             return { ...freshItem, selectedAltId: null };
+          }
+          // AI가 생성한 최신(v26) 후보 문장이 있으면 최신 엔진 후보와 병합·검증하여 보존
+          let baseItem = freshItem;
+          if (
+            (prevMatch.aiGenerated || prevMatch.engineVersion === "v26") &&
+            Array.isArray(prevMatch.alternatives) &&
+            prevMatch.alternatives.length > 0
+          ) {
+            const mergedCandidates = [
+              ...prevMatch.alternatives.map((a) => a.text),
+              ...(freshItem.alternatives || []).map((a) => a.text),
+            ].filter(Boolean);
+            const validatedAlts = filterDistinctValidAlternatives(
+              freshItem.originalSentence,
+              mergedCandidates,
+              freshItem.id
+            );
+            if (validatedAlts.length > 0) {
+              baseItem = {
+                ...freshItem,
+                engineVersion: "v26",
+                aiGenerated: Boolean(prevMatch.aiGenerated),
+                reason: prevMatch.reason || freshItem.reason,
+                alternatives: validatedAlts,
+              };
+            }
+          }
+          if (!prevMatch.selectedAltId) {
+            return { ...baseItem, selectedAltId: null };
           }
           // 사용자가 직접 입력한 커스텀 교정문(-custom)인 경우 보존
           if (String(prevMatch.selectedAltId).endsWith("-custom")) {
@@ -3359,11 +3749,11 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
               (a) => a.id === prevMatch.selectedAltId
             );
             if (customAlt && customAlt.text) {
-              const customId = `${freshItem.id}-custom`;
+              const customId = `${baseItem.id}-custom`;
               return {
-                ...freshItem,
+                ...baseItem,
                 alternatives: [
-                  ...freshItem.alternatives,
+                  ...baseItem.alternatives,
                   { ...customAlt, id: customId },
                 ],
                 selectedAltId: customId,
@@ -3374,7 +3764,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
           const altIdxMatch = String(prevMatch.selectedAltId).match(/-alt-(\d+)$/);
           const altNum = altIdxMatch ? Number(altIdxMatch[1]) : 1;
           const mappedAlt =
-            freshItem.alternatives[altNum - 1] || freshItem.alternatives[0];
+            baseItem.alternatives[altNum - 1] || baseItem.alternatives[0];
           const prevSelAlt = (prevMatch.alternatives || []).find(
             (a) => a.id === prevMatch.selectedAltId
           );
@@ -3383,7 +3773,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
             prevSelAlt &&
             stripQ(prevSelAlt.text) !== stripQ(prevMatch.originalSentence);
           return {
-            ...freshItem,
+            ...baseItem,
             selectedAltId: wasRealSelection && mappedAlt ? mappedAlt.id : null,
           };
         });
@@ -3433,9 +3823,12 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     return splitPressReleaseParagraphs(data.job?.raw_text || "");
   }, [data.job?.raw_text]);
 
-  function handleSwitchModeInDetail(targetMode) {
+  const [modeSwitchLoading, setModeSwitchLoading] = useState(false);
+
+  async function handleSwitchModeInDetail(targetMode) {
     const compName = data.job?.company_name || "대상 기업";
-    const draft = buildClientFallbackDraft(compName, targetMode, data.job?.raw_text || "");
+    const rawTxt = data.job?.raw_text || "";
+    const draft = buildClientFallbackDraft(compName, targetMode, rawTxt);
     const nextTitle =
       Array.isArray(draft.titleCandidates) && draft.titleCandidates.length > 0
         ? draft.titleCandidates[0]
@@ -3481,6 +3874,63 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
         body: draft.body,
       },
     }));
+
+    // 모드 2(리라이팅) 또는 모드 3(비교·기획)으로 전환 시 즉시 고품질 리라이팅 본문을 표시하고,
+    // 추가로 Claude Sonnet 4.6 API를 비동기 호출하여 더욱 정교한 데스크 리라이팅 본문으로 업그레이드
+    if ((targetMode === "rewrite" || targetMode === "comparative") && rawTxt.trim().length >= 40) {
+      setModeSwitchLoading(true);
+      try {
+        const promptSys = [
+          "당신은 매일경제신문 PR사업팀의 베테랑 편집데스크 기자입니다.",
+          targetMode === "comparative"
+            ? "현재 모드는 [모드 3: 비교·기획 기사]입니다. 단일 기업 보도자료를 산업 트렌드 및 동종업계 경쟁사 3곳 비교 분석이 결합된 7~8문단 기획 기사로 재구성하십시오. 각 경쟁사는 반드시 독립된 문단(\\n\\n)으로 분리하십시오."
+            : [
+                "현재 모드는 [모드 2: 구조 리라이팅 기사]입니다.",
+                "1. 원문 상단의 개조식 요약 불릿('- 립 글로이밤 3분기 매출 350% 급증...')은 리드문(첫 문단) 자리에 두지 말고 부제목과 중간 본문 문장으로 전환하십시오.",
+                "2. 제1문단(리드문)은 기업명과 핵심 발표 팩트로 시작하고, 중간 단락(2↔3단락 등)의 전개 순서를 재배치하며, 마지막 단락에 관계자 인용문을 배치하십시오.",
+                "3. 문단 순서만 바꾸고 원문 문장을 그대로 복사하는 것을 절대 금지합니다. 모든 문단의 어휘·수식어·서술 어미를 매일경제신문 스트레이트 기사체('~선보인다', '~구현한 것이 특징이다', '~구성됐다', '~진행된다')로 전면 리라이팅하고 불필요한 영문 병기('(athe)', '(Isigny Sainte-Mère)' 등)를 정리하십시오.",
+              ].join("\n"),
+          '반드시 JSON으로만 응답하십시오: {"titleCandidates":["...","...","..."],"subtitleLines":["...","..."],"body":"..."}',
+        ].join("\n");
+        const genRes = await callPerplexityResponsesApi({
+          instructions: promptSys,
+          input: `대상 기업명: ${compName}\n작성 모드: ${targetMode}\n\n[보도자료 원문]\n${rawTxt.slice(0, 3000)}`,
+          maxOutputTokens: 3600,
+          useWebSearch: targetMode === "comparative",
+        });
+        const parsed = safeParseLlmJson(genRes.text);
+        if (parsed && typeof parsed.body === "string" && parsed.body.trim().length >= 120) {
+          const aiBody = parsed.body
+            .replace(/\[\d+\]/g, "")
+            .replace(/\*{1,2}/g, "")
+            .trim();
+          const aiTitle =
+            Array.isArray(parsed.titleCandidates) && parsed.titleCandidates[0]
+              ? parsed.titleCandidates[0]
+              : nextTitle;
+          const aiSubtitle =
+            Array.isArray(parsed.subtitleLines) && parsed.subtitleLines.length > 0
+              ? parsed.subtitleLines.join("\n")
+              : nextSubtitle;
+          setTitle(aiTitle);
+          setSubtitle(aiSubtitle);
+          setBody(aiBody);
+          onUpdate((prev) => ({
+            ...prev,
+            article: {
+              ...(prev.article || {}),
+              title: aiTitle,
+              subtitle: aiSubtitle,
+              body: aiBody,
+            },
+          }));
+        }
+      } catch (err) {
+        console.warn("Mode switch AI rewrite fallback retained:", err);
+      } finally {
+        setModeSwitchLoading(false);
+      }
+    }
   }
 
   // 모드 1에서 원문 단락(rawParagraphs) + 선택된 교정 문장(sentenceSuggestions) + 반영된 팩트 메모(factMemos)를 결합해
@@ -4426,24 +4876,28 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
             const unchangedInSamePara =
               cleanSent.length >= 8 && sameBodyPara.includes(cleanSent);
 
+            // 전체 리라이팅 단락 중 이 원문 문장과 가장 유사하거나 매핑된 단락 인덱스 탐색
+            const prefixKey = cleanSent
+              .replace(/^[-•▪▲◆■]\s*/, "")
+              .replace(/\([^)]{1,30}\)/g, "")
+              .slice(0, 14)
+              .trim();
+            let matchedBodyIdx = bodyParagraphs.findIndex((bp) => {
+              const cleanBp = (bp || "").replace(/\s+/g, " ").trim();
+              if (cleanSent.length >= 8 && cleanBp.includes(cleanSent)) return true;
+              if (prefixKey.length >= 6 && cleanBp.includes(prefixKey)) return true;
+              return false;
+            });
+            if (matchedBodyIdx < 0) {
+              matchedBodyIdx = Math.min(rIdx, Math.max(0, bodyParagraphs.length - 1));
+            }
+            const isMovedPara = matchedBodyIdx !== rIdx;
+
             if (!unchangedInSamePara) {
               // 리라이팅 모드(모드 2·3)에서 원문 중 변경·재배치된 문장 및 내부 삭제·치환 구절을 시각적으로 표시
-              const isMovedPara =
-                rIdx === 1 ||
-                rIdx === 2 ||
-                (rawParagraphs.length >= 5 && (rIdx === 3 || rIdx === 4));
-              const targetMovedIdx =
-                rIdx === 1
-                  ? 2
-                  : rIdx === 2
-                  ? 1
-                  : rIdx === 3 && rawParagraphs.length >= 5
-                  ? 4
-                  : rIdx === 4 && rawParagraphs.length >= 5
-                  ? 3
-                  : rIdx;
+              const targetMovedIdx = matchedBodyIdx;
               const tokenRegex =
-                /(\([A-Za-z0-9\s,&·-]{6,}\)|세계\s*최초로?|국내\s*최초로?|업계\s*최초로?|최초로|활용해|영광의\s+순간을|생생하고\s+현장감\s+넘치는\s+화면을|선명하고\s+생동감\s+있는|대회\s+기간\s+중|각국\s+대표팀과\s+교류하며|다양한\s+활동을\s+선보일\s+계획이다\.?|선보일\s+계획이다\.?|전달할\s+예정이다\.?|추억을\s+이어줄\s+예정이다\.?|마련할\s+계획이다\.?|등이\s+운영된다\.?|특별한\s+사진을\s+제작할\s+수\s+있다\.?|유익한\s+세션들이\s+진행된다\.?|도\s+진행한다\.?|역사적인\s+이정표가\s+될\s+전망이다\.?|굳건히\s+이어오고\s+있으며|지속해서\s+지원하고\s+있다\.?|특별한\s+순간을\s+기념할\s+수\s+있다\.?|기념할\s+수\s+있다\.?|폭넓게\s+활용할\s+수\s+있다\.?|구현하도록\s+설계됐다\.?|설계됐다\.?|설계했다\.?|간소화했다\.?|개발\s+및\s+생산해\s+왔다\.?)/g;
+                /(^[-•▪▲◆■]\s*|\([A-Za-z0-9À-ÖØ-öø-ÿ\s,&·.'’-]{3,}\)|세계\s*최초로?|국내\s*최초로?|업계\s*최초로?|최초로|활용해|영광의\s+순간을|생생하고\s+현장감\s+넘치는\s+화면을|선명하고\s+생동감\s+있는|대회\s+기간\s+중|각국\s+대표팀과\s+교류하며|선보인다고\s+밝혔다\.?|공개한다고\s+밝혔다\.?|출시한다고\s+밝혔다\.?|진행하는\s+것은\s+이번이\s+처음이다\.?|영감을\s+받아|구현했다\.?|구성할\s+예정이다\.?|자랑한다\.?|제공한다\.?|증정한다\.?|다양한\s+활동을\s+선보일\s+계획이다\.?|선보일\s+계획이다\.?|전달할\s+예정이다\.?|추억을\s+이어줄\s+예정이다\.?|마련할\s+계획이다\.?|등이\s+운영된다\.?|특별한\s+사진을\s+제작할\s+수\s+있다\.?|유익한\s+세션들이\s+진행된다\.?|도\s+진행한다\.?|역사적인\s+이정표가\s+될\s+전망이다\.?|굳건히\s+이어오고\s+있으며|지속해서\s+지원하고\s+있다\.?|특별한\s+순간을\s+기념할\s+수\s+있다\.?|기념할\s+수\s+있다\.?|폭넓게\s+활용할\s+수\s+있다\.?|구현하도록\s+설계됐다\.?|설계됐다\.?|설계했다\.?|간소화했다\.?|개발\s+및\s+생산해\s+왔다\.?)/g;
               const parts = sent.split(tokenRegex);
 
               return (
@@ -4479,7 +4933,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                   <span className="ml-1 inline-flex items-center rounded bg-[#B26A00] px-1.5 py-0.2 text-[10px] font-bold text-surface align-middle whitespace-nowrap select-none">
                     {isMovedPara
                       ? `⇄ 단락${String(targetMovedIdx + 1).padStart(2, "0")} 이동·리라이팅`
-                      : rIdx === 0 && sIdx === 0
+                      : matchedBodyIdx === 0 && sIdx === 0
                       ? "✎ 리드문 리라이팅"
                       : "✎ 리라이팅됨"}
                   </span>
@@ -4622,13 +5076,16 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
 
   function renderRewriteYellowHighlightsStudio(para, paraIdx) {
     const sents = splitKoreanSentences(para || "");
-    const sameRaw = (rawParagraphs[paraIdx] || "").replace(/\s+/g, " ").trim();
+    const allRawClean = rawParagraphs
+      .map((rp) => (rp || "").replace(/\s+/g, " ").trim())
+      .join(" ");
     return (
       <div className="leading-[28px] text-[15px] text-ink">
         {sents.map((sent, sIdx) => {
           const cleanSent = sent.replace(/\s+/g, " ").trim();
-          const sameAsRaw = cleanSent.length >= 8 && sameRaw.includes(cleanSent);
-          if (!sameAsRaw) {
+          const sameAsAnyRaw =
+            cleanSent.length >= 8 && allRawClean.includes(cleanSent);
+          if (!sameAsAnyRaw) {
             return (
               <span
                 key={`${paraIdx}-rw-${sIdx}`}

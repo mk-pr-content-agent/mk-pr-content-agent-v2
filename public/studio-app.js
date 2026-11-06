@@ -139,15 +139,17 @@ function splitKoreanSentences(text) {
     .filter(Boolean);
 }
 
-// 기업·기관명 미입력 시 보도자료 원문에서 정확하게 주체 기업·기관명을 추출
+// 기업·기관명 미입력 시 보도자료 원문에서 정확하게 주체 기업·브랜드·기관명을 추출
 function extractCompanyNameFromRawText(rawText, manualName) {
-  if (manualName && manualName.trim()) return manualName.trim();
+  if (manualName && manualName.trim() && manualName.trim() !== "대상 기업") {
+    return manualName.trim();
+  }
   const text = (rawText || "").replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
   if (!text) return "대상 기업";
 
   // 1) [제공=기업명], (사진=기업명) 등 캡션 표기 우선 추출
   const providedMatch = text.match(/[\[<(](?:제공|사진|출처)\s*[=:]\s*([가-힣A-Za-z0-9㈜·&\s]{2,20})[\]>)]/);
-  if (providedMatch && providedMatch[1]) {
+  if (providedMatch && providedMatch[1] && providedMatch[1].trim() !== "대상 기업") {
     return providedMatch[1].trim();
   }
 
@@ -163,25 +165,56 @@ function extractCompanyNameFromRawText(rawText, manualName) {
     "올해", "최근", "이번", "오늘", "이날", "현재", "국내", "글로벌", "세계", "전국",
     "시장", "업계", "매출", "수요", "소비자", "고객", "이용자", "방문객", "관계자",
     "행사", "캠페인", "프로그램", "서비스", "플랫폼", "브랜드", "제품", "상품", "기술",
-    "가운데", "한편", "특히", "또한", "아울러", "보도자료",
+    "가운데", "한편", "특히", "또한", "아울러", "보도자료", "컬러", "색상", "출시",
+    "시딩", "키트", "패키지", "에디션", "가격", "구성",
   ]);
 
-  // 3) 본문 첫 3개 문단에서 주어(은/는/이/가) 위치의 기업·기관명 추출
-  const paras = splitPressReleaseParagraphs(text).slice(0, 3);
-  for (const p of paras) {
+  // 3) 상단 개조식 요약 불릿('- ...', '▲ ...')을 건너뛰고 실제 본문 문단에서 기업·브랜드명 추출
+  const allParas = splitPressReleaseParagraphs(text);
+  const narrativeParas = allParas.filter(
+    (p) => !/^[-•▪▲◆■]\s+/.test((p || "").trim())
+  );
+  const searchParas = (narrativeParas.length > 0 ? narrativeParas : allParas).slice(0, 5);
+
+  for (const p of searchParas) {
     const cleanP = p
       .replace(/^\[[^\]]+\]\s*/, "")
       .replace(/^\([^)]+\)\s*/, "")
       .replace(/^[▲■●◆▶\-·*]\s*/, "")
       .trim();
 
-    // 공동 주체 패턴 (예: '무신사와 29CM가')
+    // (A) 모기업 + 산하 브랜드 복합 주어 패턴 (예: '생활문화기업 LF의 뷰티 브랜드 아떼(athe)가' -> 'LF 뷰티 브랜드 아떼')
+    const parentBrandMatch = cleanP.match(
+      /^(?:[가-힣A-Za-z0-9]+\s+)?([가-힣A-Za-z0-9㈜&]{2,14})의\s+((?:[가-힣A-Za-z0-9]+\s+)?브랜드)\s+[‘'“"]?([가-힣A-Za-z0-9]{2,14})[’'”"]?(?:\([^)]+\))?(?:은|는|이|가)\s/
+    );
+    if (parentBrandMatch && parentBrandMatch[1] && parentBrandMatch[3]) {
+      const parentCorp = parentBrandMatch[1].trim();
+      const brandDesc = (parentBrandMatch[2] || "브랜드").replace(/\s+/g, " ").trim();
+      const brandName = parentBrandMatch[3].trim();
+      if (!stopWords.has(parentCorp) && !stopWords.has(brandName)) {
+        return `${parentCorp} ${brandDesc} ${brandName}`;
+      }
+    }
+
+    // (B) 수식어 + 브랜드명 단독 주어 패턴 (예: '프리미엄 뷰티 브랜드 아떼(athe)가' -> '뷰티 브랜드 아떼')
+    const singleBrandMatch = cleanP.match(
+      /^((?:[가-힣A-Za-z0-9]+\s+)?브랜드)\s+[‘'“"]?([가-힣A-Za-z0-9]{2,14})[’'”"]?(?:\([^)]+\))?(?:은|는|이|가)\s/
+    );
+    if (singleBrandMatch && singleBrandMatch[2]) {
+      const brandDesc = singleBrandMatch[1].replace(/\s+/g, " ").trim();
+      const brandName = singleBrandMatch[2].trim();
+      if (!stopWords.has(brandName)) {
+        return `${brandDesc} ${brandName}`;
+      }
+    }
+
+    // (C) 공동 주체 패턴 (예: '무신사와 29CM가')
     const coMatch = cleanP.match(/^([가-힣A-Za-z0-9㈜]{2,12}(?:와|과)\s+[가-힣A-Za-z0-9㈜]{2,12})(?:은|는|이|가)\s/);
     if (coMatch && coMatch[1]) {
       return coMatch[1].trim();
     }
 
-    // 수식어 뒤 기업명 + 조사 패턴 또는 문두 기업명 + 조사 패턴
+    // (D) 수식어 뒤 기업명 + 조사 패턴 또는 문두 기업명 + 조사 패턴
     const candidates = Array.from(
       cleanP.matchAll(/([가-힣A-Za-z0-9㈜·&]{2,16})(?:\([^)]+\))?(?:은|는|이|가)\s/g)
     );
@@ -191,6 +224,13 @@ function extractCompanyNameFromRawText(rawText, manualName) {
         return word;
       }
     }
+  }
+
+  // 4) 말미 인용문의 'OOO 관계자는' 패턴에서 추출 (예: 'LF 아떼 관계자는')
+  const speakerMatch = text.match(/([가-힣A-Za-z0-9㈜&\s]{2,20})\s+관계자는\s+[“"']/);
+  if (speakerMatch && speakerMatch[1]) {
+    const spk = speakerMatch[1].replace(/\s+/g, " ").trim();
+    if (spk && !stopWords.has(spk)) return spk;
   }
 
   return "대상 기업";
@@ -1601,8 +1641,8 @@ function safeParseLlmJson(rawText) {
 function buildDynamicTitlesAndSubtitles(compName, rawText) {
   const c = extractCompanyNameFromRawText(rawText, compName);
   const paras = splitPressReleaseParagraphs(rawText);
-  const topBullets = paras.filter((p, idx) => idx <= 2 && isTopSummaryBulletLine(p));
-  const narrativeParas = paras.filter((p, idx) => !(idx <= 2 && isTopSummaryBulletLine(p)));
+  const topBullets = paras.filter((p, idx) => idx <= 4 && isTopSummaryBulletLine(p));
+  const narrativeParas = paras.filter((p, idx) => !(idx <= 4 && isTopSummaryBulletLine(p)));
   const firstPara = narrativeParas[0] || paras[0] || "";
   const secondPara = narrativeParas[1] || paras[1] || "";
 
@@ -1617,8 +1657,9 @@ function buildDynamicTitlesAndSubtitles(compName, rawText) {
 
   // 1문단 핵심 서술 행위 추출
   let coreAction = "본격 추진";
-  if (/협업해|콜라보|손잡고/.test(firstPara)) coreAction = "협업 에디션 출시";
-  else if (/캠페인[^.]*(?:전개|진행)/.test(firstPara)) coreAction = "캠페인 동시 전개";
+  if (/협업해|콜라보|손잡고/.test(firstPara)) {
+    coreAction = /에디션/.test(primaryKey) ? "공식 출시" : "협업 에디션 출시";
+  } else if (/캠페인[^.]*(?:전개|진행)/.test(firstPara)) coreAction = "캠페인 동시 전개";
   else if (/개최한다|개최한다고|연다/.test(firstPara)) coreAction = "개최";
   else if (/출시한다|선보인다|선보인다고|공개한다|출시했다/.test(firstPara)) coreAction = "신규 출시·공개";
   else if (/확대했다|넓혔다/.test(firstPara)) coreAction = "전면 확대";
@@ -1626,11 +1667,23 @@ function buildDynamicTitlesAndSubtitles(compName, rawText) {
   else if (/체결했다|협약/.test(firstPara)) coreAction = "업무협약 체결";
 
   if (primaryKey) {
-    const t1 = `${c}, ‘${primaryKey}’ ${coreAction}… 고객 접점 확대`;
-    const t2 = secondaryKey
+    const rawT1 = `${c}, ‘${primaryKey}’ ${coreAction}… 고객 접점 확대`;
+    const t1 =
+      Array.from(rawT1).length > 44
+        ? `${c}, ‘${primaryKey}’ ${coreAction}`
+        : rawT1;
+    const rawT2 = secondaryKey
       ? `${c}, ‘${primaryKey}’·‘${secondaryKey}’ 앞세워 시장 공략`
       : `${c}, ‘${primaryKey}’ 맞춤형 콘텐츠·라인업 본격 운영`;
-    const t3 = `${c}, ‘${primaryKey}’ ${coreAction}으로 차별화 경쟁력 강화`;
+    const t2 =
+      Array.from(rawT2).length > 44
+        ? `${c}, ‘${primaryKey}’ 신규 라인업 본격 운영`
+        : rawT2;
+    const rawT3 = `${c}, ‘${primaryKey}’ ${coreAction}으로 차별화 경쟁력 강화`;
+    const t3 =
+      Array.from(rawT3).length > 44
+        ? `${c}, ‘${primaryKey}’ 앞세워 시장 공략 강화`
+        : rawT3;
 
     // 상단 요약 불릿이 있으면 이를 정돈하여 부제목 1줄로 우선 활용
     let sub1 = "";
@@ -3648,14 +3701,33 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     window.addEventListener("mouseup", onMouseUp);
   }
 
-  const [title, setTitle] = useState(data.article?.title || "");
+  const resolvedCompanyName = useMemo(
+    () => extractCompanyNameFromRawText(data.job?.raw_text || "", data.job?.company_name),
+    [data.job?.raw_text, data.job?.company_name]
+  );
+  const [hasManualBodyEdit, setHasManualBodyEdit] = useState(() =>
+    Boolean(data.hasManualBodyEdit)
+  );
+
+  const [title, setTitle] = useState(() => {
+    let initTitle = data.article?.title || "";
+    if (initTitle.includes("대상 기업") && resolvedCompanyName !== "대상 기업") {
+      initTitle = initTitle.replace(/대상 기업/g, resolvedCompanyName);
+      if (Array.from(initTitle).length > 45) {
+        initTitle = initTitle
+          .replace(/협업 에디션 출시…\s*고객 접점 확대$/, "공식 출시")
+          .replace(/…\s*고객 접점 확대$/, "");
+      }
+    }
+    return initTitle;
+  });
   const [subtitle, setSubtitle] = useState(data.article?.subtitle || "");
   const [body, setBody] = useState(() => {
     let b = (data.article?.body || "")
       .replace(/말했는\s*설명이다/g, "전했다")
       .replace(/말했게\s*된다/g, "강조했다");
-    // 모드 1에서 과거 따옴표 자동치환(sanitized)으로 인해 본문이 원문과 달라져 강제 초록색 교체로 오인된 경우 원문 복원
-    if (effectiveMode === "minimal" && data.job?.raw_text) {
+    // 모드 1에서 과거 따옴표 자동치환(sanitized)으로 인해 본문이 원문과 달라져 강제 초록색 교체로 오인된 경우 원문 복원 (단, 사용자가 직접 편집한 경우는 보존)
+    if (effectiveMode === "minimal" && data.job?.raw_text && !data.hasManualBodyEdit) {
       const stripQ = (str) => (str || "").replace(/['‘’"“”\s]/g, "");
       if (stripQ(b) === stripQ(data.job.raw_text)) {
         const rawParas = splitPressReleaseParagraphs(data.job.raw_text);
@@ -3668,7 +3740,10 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   });
   const [captionText, setCaptionText] = useState(() => {
     try {
-      return JSON.parse(data.article?.caption_json || "[]").join("\n");
+      const joined = JSON.parse(data.article?.caption_json || "[]").join("\n");
+      return resolvedCompanyName !== "대상 기업"
+        ? joined.replace(/대상 기업/g, resolvedCompanyName)
+        : joined;
     } catch {
       return "";
     }
@@ -3696,7 +3771,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     const stripQ = (str) => (str || "").replace(/['‘’"“”\s]/g, "");
     const freshList = buildClientSentenceSuggestions(
       data.job?.raw_text || "",
-      data.job?.company_name || "대상 기업"
+      resolvedCompanyName
     );
     try {
       const s6Rec = (data.stages || []).find((s) => s.stage === "S6");
@@ -3791,7 +3866,8 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     if (
       Array.isArray(data.factMemos) &&
       data.factMemos.length > 0 &&
-      !JSON.stringify(data.factMemos).includes("은(는)")
+      !JSON.stringify(data.factMemos).includes("은(는)") &&
+      !JSON.stringify(data.factMemos).includes("대상 기업")
     ) {
       return data.factMemos.map((m) => ({
         ...m,
@@ -3799,7 +3875,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
       }));
     }
     const baseMemos = buildClientCompanyFactMemos(
-      data.job?.company_name || "대상 기업",
+      resolvedCompanyName,
       data.job?.raw_text || "",
       data.sources || []
     );
@@ -3826,7 +3902,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   const [modeSwitchLoading, setModeSwitchLoading] = useState(false);
 
   async function handleSwitchModeInDetail(targetMode) {
-    const compName = data.job?.company_name || "대상 기업";
+    const compName = resolvedCompanyName;
     const rawTxt = data.job?.raw_text || "";
     const draft = buildClientFallbackDraft(compName, targetMode, rawTxt);
     const nextTitle =
@@ -3840,6 +3916,8 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     setTitle(nextTitle);
     setSubtitle(nextSubtitle);
     setBody(draft.body);
+    setHasManualBodyEdit(false);
+    setIsDirectTyping(false);
     setShowSideBySide(targetMode === "rewrite");
     setShowFactNotepad(targetMode === "minimal");
     const hasValidExistingComps =
@@ -3862,8 +3940,10 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
         : data.competitors || [];
     onUpdate((prev) => ({
       ...prev,
+      hasManualBodyEdit: false,
       job: {
         ...prev.job,
+        company_name: compName,
         mode: targetMode,
       },
       competitors: nextCompetitors,
@@ -3969,8 +4049,16 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   };
 
   // 모드 1에서 왼쪽 교정 선택 상태(selectedAltId)나 팩트 메모가 바뀔 때마다 오른쪽 본문(body)을 즉시 100% 동기화
+  // (단, 사용자가 '직접 타이핑 편집'으로 본문을 직접 수정/삭제한 경우에는 사용자의 직접 편집 본문을 보존)
   useEffect(() => {
-    if (effectiveMode !== "minimal" || isDirectTyping || rawParagraphs.length === 0) return;
+    if (
+      effectiveMode !== "minimal" ||
+      isDirectTyping ||
+      hasManualBodyEdit ||
+      rawParagraphs.length === 0
+    ) {
+      return;
+    }
     const synced = buildMinimalBodyFromRaw(
       rawParagraphs,
       sentenceSuggestions,
@@ -3980,7 +4068,15 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     if (synced && synced !== body) {
       setBody(synced);
     }
-  }, [effectiveMode, isDirectTyping, rawParagraphs, sentenceSuggestions, factMemos, memoTargetParas]);
+  }, [
+    effectiveMode,
+    isDirectTyping,
+    hasManualBodyEdit,
+    rawParagraphs,
+    sentenceSuggestions,
+    factMemos,
+    memoTargetParas,
+  ]);
 
   function handleSelectSentenceAlternative(sugId, altId, customText) {
     const target = sentenceSuggestions.find((s) => s.id === sugId);
@@ -4010,7 +4106,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
       return { ...item, selectedAltId: altId };
     });
     setSentenceSuggestions(nextList);
-    if (effectiveMode === "minimal" && rawParagraphs.length > 0) {
+    if (effectiveMode === "minimal" && !hasManualBodyEdit && rawParagraphs.length > 0) {
       setBody(
         buildMinimalBodyFromRaw(rawParagraphs, nextList, factMemos, memoTargetParas)
       );
@@ -4027,7 +4123,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
       item.id === sugId ? { ...item, selectedAltId: null } : item
     );
     setSentenceSuggestions(nextList);
-    if (effectiveMode === "minimal" && rawParagraphs.length > 0) {
+    if (effectiveMode === "minimal" && !hasManualBodyEdit && rawParagraphs.length > 0) {
       setBody(
         buildMinimalBodyFromRaw(rawParagraphs, nextList, factMemos, memoTargetParas)
       );
@@ -4046,10 +4142,21 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
       return { ...item, selectedAltId: firstAlt.id };
     });
     setSentenceSuggestions(nextList);
-    if (effectiveMode === "minimal" && rawParagraphs.length > 0) {
+    if (effectiveMode === "minimal" && !hasManualBodyEdit && rawParagraphs.length > 0) {
       setBody(
         buildMinimalBodyFromRaw(rawParagraphs, nextList, factMemos, memoTargetParas)
       );
+    } else {
+      setBody((prev) => {
+        let updated = prev;
+        nextList.forEach((item) => {
+          const firstAlt = item.alternatives[0];
+          if (firstAlt && firstAlt.text) {
+            updated = replaceSentenceInBodyResilient(updated, item, firstAlt.text);
+          }
+        });
+        return updated;
+      });
     }
   }
 
@@ -4059,10 +4166,22 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
       selectedAltId: null,
     }));
     setSentenceSuggestions(nextList);
-    if (effectiveMode === "minimal" && rawParagraphs.length > 0) {
+    if (effectiveMode === "minimal" && !hasManualBodyEdit && rawParagraphs.length > 0) {
       setBody(
         buildMinimalBodyFromRaw(rawParagraphs, nextList, factMemos, memoTargetParas)
       );
+    } else {
+      setBody((prev) => {
+        let updated = prev;
+        sentenceSuggestions.forEach((item) => {
+          updated = replaceSentenceInBodyResilient(
+            updated,
+            item,
+            item.originalSentence
+          );
+        });
+        return updated;
+      });
     }
     setActiveSuggestionId(null);
   }
@@ -4071,7 +4190,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     if (aiProofreadLoading) return;
     setAiProofreadLoading(true);
     try {
-      const compName = data.job?.company_name || "대상 기업";
+      const compName = resolvedCompanyName;
       const baseList = buildClientSentenceSuggestions(
         data.job?.raw_text || "",
         compName
@@ -4296,6 +4415,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   function updateParagraph(idx, newText) {
     const next = [...bodyParagraphs];
     next[idx] = newText;
+    setHasManualBodyEdit(true);
     setBody(next.join("\n\n"));
   }
 
@@ -4306,17 +4426,20 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     const tmp = next[idx];
     next[idx] = next[t];
     next[t] = tmp;
+    setHasManualBodyEdit(true);
     setBody(next.join("\n\n"));
   }
 
   function addParagraphBelow(idx) {
     const next = [...bodyParagraphs];
     next.splice(idx + 1, 0, "새 문단 내용을 입력하십시오.");
+    setHasManualBodyEdit(true);
     setBody(next.join("\n\n"));
   }
 
   function removeParagraph(idx) {
     if (bodyParagraphs.length <= 1) return;
+    setHasManualBodyEdit(true);
     setBody(bodyParagraphs.filter((_, i) => i !== idx).join("\n\n"));
   }
 
@@ -4326,6 +4449,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     const mid = next.slice(1, -1);
     const rot = [...mid.slice(1), mid[0]];
     next.splice(1, mid.length, ...rot);
+    setHasManualBodyEdit(true);
     setBody(next.join("\n\n"));
   }
 
@@ -4356,8 +4480,10 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
       .filter(Boolean);
     onUpdate((prev) => ({
       ...prev,
+      hasManualBodyEdit,
       job: {
         ...prev.job,
+        company_name: resolvedCompanyName,
         options_json: JSON.stringify({ byline }),
       },
       article: {
@@ -4380,6 +4506,8 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     title,
     subtitle,
     body,
+    hasManualBodyEdit,
+    resolvedCompanyName,
     captionText,
     byline,
     aiNoticeIncluded,
@@ -4392,6 +4520,9 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   ]);
 
   function handleSave(override = {}) {
+    if (isDirectTyping) {
+      setIsDirectTyping(false);
+    }
     const nextTitle = override.title ?? title;
     const nextSubtitle = override.subtitle ?? subtitle;
     const nextBody = override.body ?? body;
@@ -4412,8 +4543,10 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
 
     onUpdate((prev) => ({
       ...prev,
+      hasManualBodyEdit,
       job: {
         ...prev.job,
+        company_name: resolvedCompanyName,
         verdict: override.resolveHold ? "PASS" : prev.job.verdict,
         options_json: JSON.stringify({ byline: nextByline }),
       },
@@ -5003,16 +5136,15 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
   }
 
   function renderMinimalParagraphStudio(para, paraIdx) {
-    // 모드 1에서는 왼쪽 원문 단락(rawParagraphs[paraIdx])과 동일한 문장 배열을 기준으로 렌더링하여
-    // 왼쪽에서 '✓ 교체됨'으로 바뀐 문장이 오른쪽 화면에서 누락되거나 불일치하는 현상을 원천 차단
-    const basePara =
-      !isDirectTyping && rawParagraphs[paraIdx] ? rawParagraphs[paraIdx] : para || "";
+    // 사용자가 '직접 타이핑 편집'으로 수정·삭제한 내용을 그대로 반영하기 위해 실제 bodyParagraphs[paraIdx](para)를 기준으로 렌더링
+    const basePara = para || "";
     const sents = splitKoreanSentences(basePara);
     const insertedMemosForPara = factMemos.filter((m) => {
       if (!m.inserted) return false;
+      if (basePara.includes(m.text)) return false;
       const tIdx = Math.min(
         Math.max(0, memoTargetParas?.[m.id] ?? m.targetParagraphIndex ?? 1),
-        Math.max(0, rawParagraphs.length - 1)
+        Math.max(0, bodyParagraphs.length - 1)
       );
       return tIdx === paraIdx;
     });
@@ -5020,6 +5152,23 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
     return (
       <div className="leading-[26px] text-[14px] text-ink break-keep">
         {sents.map((sent, sIdx) => {
+          const matchedInlineMemo = factMemos.find(
+            (m) => m.inserted && isSameSentenceResilient(sent, m.text)
+          );
+          if (matchedInlineMemo) {
+            return (
+              <span
+                key={`${paraIdx}-inline-fact-${matchedInlineMemo.id}-${sIdx}`}
+                className="mr-1.5 inline rounded bg-pass-bg text-pass border-b-2 border-pass font-semibold px-1.5 py-0.5 break-keep"
+              >
+                <span className="mr-1 inline-flex items-center whitespace-nowrap rounded bg-pass px-1.5 py-0.2 text-[10px] font-semibold text-surface select-none">
+                  📌 {matchedInlineMemo.category}
+                </span>
+                <span>{matchedInlineMemo.text}</span>
+              </span>
+            );
+          }
+
           const matchedSug = sentenceSuggestions.find(
             (sug) =>
               isSameSentenceResilient(sent, sug.originalSentence) ||
@@ -5119,7 +5268,7 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
             </button>
             <span className="text-line hidden sm:inline">|</span>
             <h1 className="text-[16px] font-semibold text-ink whitespace-nowrap shrink-0">
-              {data.job.company_name || "보도자료 검토 작업"}
+              {resolvedCompanyName || "보도자료 검토 작업"}
             </h1>
             <VerdictBadge verdict={data.job.verdict} />
             <span className="inline-flex h-[24px] shrink-0 whitespace-nowrap items-center rounded-md border-hairline border-hold bg-hold-bg px-2 text-[12px] font-medium text-hold">
@@ -5843,7 +5992,10 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                         <textarea
                           rows={18}
                           value={body}
-                          onChange={(e) => setBody(e.target.value)}
+                          onChange={(e) => {
+                            setHasManualBodyEdit(true);
+                            setBody(e.target.value);
+                          }}
                           onFocus={(e) => e.target.select()}
                           className="w-full rounded-md border-hairline border-line bg-surface p-3 text-[14px] leading-[24px] text-ink font-sans"
                         />
@@ -5951,7 +6103,10 @@ function JobDetailView({ data, onBack, onOpenGuide, onUpdate }) {
                               <textarea
                                 rows={22}
                                 value={body}
-                                onChange={(e) => setBody(e.target.value)}
+                                onChange={(e) => {
+                                  setHasManualBodyEdit(true);
+                                  setBody(e.target.value);
+                                }}
                                 className="w-full rounded-md border-hairline border-line bg-surface p-4 text-[15px] leading-[28px] text-ink"
                               />
                               <p className="text-[11px] text-ink-muted">

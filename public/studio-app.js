@@ -2493,6 +2493,26 @@ function App() {
     } catch {}
   }, [route]);
 
+  const [prevRouteBeforeGuide, setPrevRouteBeforeGuide] = useState({
+    page: "jobs",
+    jobId: null,
+  });
+
+  function handleOpenGuideFrom(currentRoute) {
+    if (currentRoute && currentRoute.page !== "guide") {
+      setPrevRouteBeforeGuide(currentRoute);
+    }
+    setRoute({ page: "guide", jobId: null });
+  }
+
+  function handleCloseGuide() {
+    if (prevRouteBeforeGuide && prevRouteBeforeGuide.page !== "guide") {
+      setRoute(prevRouteBeforeGuide);
+    } else {
+      setRoute({ page: "jobs", jobId: null });
+    }
+  }
+
   function handleDeleteJob(id) {
     if (!window.confirm("이 작업을 목록에서 삭제하시겠습니까?")) return;
     setJobsData((prev) => prev.filter((item) => item.job.id !== id));
@@ -2510,14 +2530,14 @@ function App() {
   }
 
   if (route.page === "guide") {
-    return <GuideView onBack={() => setRoute({ page: "jobs", jobId: null })} />;
+    return <GuideView onBack={handleCloseGuide} />;
   }
 
   if (route.page === "new") {
     return (
       <NewJobView
         onBack={() => setRoute({ page: "jobs", jobId: null })}
-        onOpenGuide={() => setRoute({ page: "guide", jobId: null })}
+        onOpenGuide={() => handleOpenGuideFrom(route)}
         onCreated={handleCreateJob}
       />
     );
@@ -2531,7 +2551,7 @@ function App() {
           key={found.job.id}
           data={found}
           onBack={() => setRoute({ page: "jobs", jobId: null })}
-          onOpenGuide={() => setRoute({ page: "guide", jobId: null })}
+          onOpenGuide={() => handleOpenGuideFrom(route)}
           onUpdate={(updater) => handleUpdateJobItem(found.job.id, updater)}
         />
       );
@@ -2562,7 +2582,7 @@ function App() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
-              onClick={() => setRoute({ page: "guide", jobId: null })}
+              onClick={() => handleOpenGuideFrom(route)}
               className="inline-flex h-[32px] shrink-0 whitespace-nowrap items-center gap-1.5 rounded-md border-hairline border-line bg-surface px-3 text-[12px] font-medium text-ink hover:bg-surface-subtle"
             >
               <span className="text-primary font-bold">ⓘ</span>
@@ -2740,6 +2760,16 @@ function App() {
 }
 
 function GuideView({ onBack }) {
+  useEffect(() => {
+    function handleMsg(e) {
+      if (e.data && e.data.type === "MK_CLOSE_GUIDE") {
+        onBack();
+      }
+    }
+    window.addEventListener("message", handleMsg);
+    return () => window.removeEventListener("message", handleMsg);
+  }, [onBack]);
+
   return (
     <div className="min-h-screen bg-surface-subtle flex flex-col">
       <header className="bg-surface border-b-hairline border-line">
@@ -2748,27 +2778,27 @@ function GuideView({ onBack }) {
             <button
               type="button"
               onClick={onBack}
-              className="text-[14px] font-medium text-ink-muted hover:text-ink whitespace-nowrap shrink-0"
+              className="inline-flex h-[32px] items-center gap-1 rounded-md border-hairline border-line bg-surface px-3 text-[13px] font-semibold text-ink hover:bg-surface-subtle whitespace-nowrap shrink-0"
             >
-              ← 작업 목록으로 돌아가기
+              ← 이전 서비스 화면으로 돌아가기
             </button>
             <span className="text-line hidden sm:inline">|</span>
             <h1 className="text-[16px] font-semibold text-ink break-keep">
-              매경 PR사업팀 콘텐츠 작성 에이전트 — 실무 사용 가이드 (12장 슬라이드)
+              매경 PR사업팀 콘텐츠 작성 에이전트 v2 — 실무 사용 가이드 (12장 슬라이드)
             </h1>
           </div>
           <a
-            href="./guide/매경_PR사업팀_콘텐츠작성에이전트_사용가이드.pdf"
+            href="./guide/매경_PR사업팀_콘텐츠작성에이전트_사용가이드.pdf?v=20261106_v25"
             download="매경_PR사업팀_콘텐츠작성에이전트_사용가이드.pdf"
             className="inline-flex h-[32px] shrink-0 whitespace-nowrap items-center rounded-md bg-primary px-3.5 text-[12px] font-semibold text-surface"
           >
-            PDF 파일 다운로드
+            📥 PDF 가이드 다운로드
           </a>
         </div>
       </header>
       <main className="mx-auto w-full max-w-[1600px] flex-1 p-4">
         <iframe
-          src="./guide/guide.html"
+          src="./guide/guide.html?v=20261106_v25"
           title="실무 사용 가이드"
           className="w-full h-[calc(100vh-95px)] rounded-lg border-hairline border-line bg-surface"
         />
